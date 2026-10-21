@@ -73,7 +73,6 @@ export default function DashboardScreen({ state, actions }: Props) {
         screen,
         sectionTitle,
         promptKind,
-        identity,
         results,
         stepIndex,
         connected,
@@ -81,13 +80,23 @@ export default function DashboardScreen({ state, actions }: Props) {
         statusLine,
     } = state
 
+    const identity = (
+        state as KioskState & {
+            identity?: {
+                name?: string
+                age?: string | number
+                gender?: string
+            }
+        }
+    ).identity ?? {}
+
     // Local editable copies of identity fields
     const [nameValue, setNameValue] = useState(identity.name ?? '')
-    const [ageValue, setAgeValue] = useState(identity.age ?? '')
+    const [ageValue, setAgeValue] = useState(String(identity.age ?? ''))
     const [genderValue, setGenderValue] = useState(identity.gender ?? '')
 
     useEffect(() => setNameValue(identity.name ?? ''), [identity.name])
-    useEffect(() => setAgeValue(identity.age ?? ''), [identity.age])
+    useEffect(() => setAgeValue(String(identity.age ?? '')), [identity.age])
     useEffect(() => setGenderValue(identity.gender ?? ''), [identity.gender])
 
     // Login / Admin dashboard state

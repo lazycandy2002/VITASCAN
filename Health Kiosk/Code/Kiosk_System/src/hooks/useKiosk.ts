@@ -6,12 +6,6 @@ export type KioskScreen = 'splash' | 'identity' | 'sensor' | 'results'
 
 export type PromptKind = 'ready' | 'retry' | 'redo' | 'finish' | null
 
-export interface PatientIdentity {
-    name: string
-    age: string
-    gender: 'M' | 'F' | ''
-}
-
 export interface KioskResults {
     TEMPERATURE?: string
     RAW_BPM?: string
@@ -27,7 +21,6 @@ export interface KioskState {
     screen: KioskScreen
     sectionTitle: string
     promptKind: PromptKind
-    identity: PatientIdentity
     results: KioskResults
     stepIndex: number
     connected: boolean
@@ -39,7 +32,6 @@ const initialState: KioskState = {
     screen: 'splash',
     sectionTitle: '',
     promptKind: null,
-    identity: { name: '', age: '', gender: '' },
     results: {},
     stepIndex: 0,
     connected: false,
@@ -53,9 +45,6 @@ export interface KioskActions {
     start: () => void
     calibrateWeight: () => void
     answerConfirm: (yes: boolean) => void
-    submitName: (value: string) => void
-    submitAge: (value: string) => void
-    submitGender: (value: 'M' | 'F') => void
     finish: () => void
 }
 
@@ -67,7 +56,6 @@ export interface KioskController {
 export function useKiosk(): KioskController {
     const [state, setState] = useState<KioskState>(initialState)
     const stateRef = useRef(state)
-    const currentStepRef = useRef('')
     const confirmModeRef = useRef<PromptKind>(null)
 
     useEffect(() => {
@@ -84,23 +72,24 @@ export function useKiosk(): KioskController {
             update({ error: '' })
         } catch (error) {
             update({
-                error: error instanceof Error ? error.message : String(error),
+                error: error instanceof Error
+                    ? error.message
+                    : String(error),
             })
         }
     }, [update])
 
-    // Get Started only opens the patient information screen.
-    // It does not connect to or send commands to the Arduino.
+    // Get Started opens the dashboard only.
+    // It does not connect to Arduino or send START.
     const enterIdentity = useCallback(() => {
         update({
             screen: 'identity',
-            sectionTitle: 'PATIENT INFORMATION',
+            sectionTitle: 'VITAL SIGNS',
             promptKind: null,
-            identity: { name: '', age: '', gender: '' },
             results: {},
             stepIndex: 0,
             error: '',
-            statusLine: 'Enter patient information, then start the measurement.',
+            statusLine: 'Connect the Arduino, then start measurement.',
         })
     }, [update])
 
@@ -110,26 +99,27 @@ export function useKiosk(): KioskController {
             update({
                 connected: true,
                 error: '',
-                statusLine: 'Arduino connected.',
+                statusLine: 'Arduino connected and ready.',
             })
         } catch (error) {
             update({
                 connected: false,
-                error: error instanceof Error ? error.message : String(error),
+                error: error instanceof Error
+                    ? error.message
+                    : String(error),
             })
         }
     }, [update])
 
-    // This sends START only when the Start Measurement button is clicked.
+    // Start the sensor-only Arduino workflow.
     const start = useCallback(() => {
         if (!stateRef.current.connected) {
             update({
-                error: 'Connect the Arduino before starting the measurement.',
+                error: 'Connect the Arduino before starting measurement.',
             })
             return
         }
 
-        currentStepRef.current = ''
         confirmModeRef.current = null
 
         update({
@@ -139,7 +129,7 @@ export function useKiosk(): KioskController {
             results: {},
             stepIndex: 0,
             error: '',
-            statusLine: 'Starting Arduino measurement...',
+            statusLine: 'Sending START to Arduino...',
         })
 
         void send('START')
@@ -147,13 +137,13 @@ export function useKiosk(): KioskController {
 
     const calibrateWeight = useCallback(() => {
         if (!stateRef.current.connected) {
-            update({ error: 'Connect the Arduino before calibrating.' })
+            update({ error: 'Connect the Arduino before calibration.' })
             return
         }
 
         update({
             error: '',
-            statusLine: 'Weight calibration started. Follow the Arduino prompts.',
+            statusLine: 'Starting weight calibration...',
         })
 
         void send('CALIBRATE')
@@ -165,12 +155,14 @@ export function useKiosk(): KioskController {
             return
         }
 
-        if (!confirmModeRef.current) {
-            update({ error: 'There is no active Arduino confirmation prompt.' })
+        const mode = confirmModeRef.current
+
+        if (!mode) {
+            update({
+                error: 'No active confirmation prompt from Arduino.',
+            })
             return
         }
-
-        const mode = confirmModeRef.current
 
         if (mode === 'finish') {
             if (yes) {
@@ -180,6 +172,7 @@ export function useKiosk(): KioskController {
         }
 
         confirmModeRef.current = null
+
         update({
             promptKind: null,
             error: '',
@@ -189,62 +182,6 @@ export function useKiosk(): KioskController {
         void send(yes ? 'Y' : 'N')
     }, [send, update])
 
-    const submitName = useCallback((value: string) => {
-        const name = value.trim()
-
-        if (!name) {
-            update({ error: 'Please enter the patient name.' })
-            return
-        }
-
-        if (!stateRef.current.connected) {
-            update({ error: 'Connect the Arduino before submitting patient details.' })
-            return
-        }
-
-        update({
-            identity: { ...stateRef.current.identity, name },
-            error: '',
-        })
-
-        void send(name)
-    }, [send, update])
-
-    const submitAge = useCallback((value: string) => {
-        const age = Number(value)
-
-        if (!Number.isInteger(age) || age < 1 || age > 120) {
-            update({ error: 'Enter a valid age from 1 to 120.' })
-            return
-        }
-
-        if (!stateRef.current.connected) {
-            update({ error: 'Connect the Arduino before submitting patient details.' })
-            return
-        }
-
-        update({
-            identity: { ...stateRef.current.identity, age: String(age) },
-            error: '',
-        })
-
-        void send(String(age))
-    }, [send, update])
-
-    const submitGender = useCallback((gender: 'M' | 'F') => {
-        if (!stateRef.current.connected) {
-            update({ error: 'Connect the Arduino before submitting patient details.' })
-            return
-        }
-
-        update({
-            identity: { ...stateRef.current.identity, gender },
-            error: '',
-        })
-
-        void send(gender)
-    }, [send, update])
-
     const finish = useCallback(() => {
         if (!stateRef.current.connected) {
             update({ error: 'Arduino is not connected.' })
@@ -252,7 +189,9 @@ export function useKiosk(): KioskController {
         }
 
         if (confirmModeRef.current !== 'finish') {
-            update({ error: 'The Arduino is not waiting for END yet.' })
+            update({
+                error: 'The Arduino has not reached the end-of-session prompt.',
+            })
             return
         }
 
@@ -262,28 +201,26 @@ export function useKiosk(): KioskController {
     useEffect(() => {
         const removeLine = kioskSerial.onLine(line => {
             const upper = line.trim().toUpperCase()
-            const current = stateRef.current
 
-            // Arduino measurement steps
+            // Arduino step notifications, e.g. STEP 1: TEMPERATURE
             const stepMatch = upper.match(/STEP\s+(\d+):\s*(.+)/)
 
             if (stepMatch) {
                 const stepNumber = Number(stepMatch[1])
                 const title = stepMatch[2].trim()
 
-                currentStepRef.current = title
-
                 update({
-                    screen: stepNumber === 0 ? 'identity' : 'sensor',
+                    screen: 'sensor',
                     sectionTitle: title,
                     stepIndex: stepNumber,
                     promptKind: null,
                     error: '',
-                    statusLine: `Arduino step: ${title}`,
+                    statusLine: `Measuring ${title.toLowerCase()}...`,
                 })
                 return
             }
 
+            // Support optional prompts from Arduino firmware.
             if (upper.includes('TRY AGAIN?')) {
                 confirmModeRef.current = 'retry'
                 update({
@@ -299,7 +236,7 @@ export function useKiosk(): KioskController {
                 update({
                     screen: 'sensor',
                     promptKind: 'redo',
-                    statusLine: 'Accept this reading or redo the measurement.',
+                    statusLine: 'Accept the reading or redo it.',
                 })
                 return
             }
@@ -307,45 +244,14 @@ export function useKiosk(): KioskController {
             if (upper.includes('READY TO START?')) {
                 confirmModeRef.current = 'ready'
                 update({
+                    screen: 'sensor',
                     promptKind: 'ready',
-                    statusLine: 'Confirm when you are ready.',
+                    statusLine: 'Confirm when ready.',
                 })
                 return
             }
 
-            // Identity and results printed by the Arduino
-            if (upper.startsWith('NAME:')) {
-                update({
-                    identity: {
-                        ...current.identity,
-                        name: line.slice(line.indexOf(':') + 1).trim(),
-                    },
-                })
-                return
-            }
-
-            if (upper.startsWith('AGE:')) {
-                update({
-                    identity: {
-                        ...current.identity,
-                        age: line.slice(line.indexOf(':') + 1).trim(),
-                    },
-                })
-                return
-            }
-
-            if (upper.startsWith('GENDER:')) {
-                const gender = line.slice(line.indexOf(':') + 1).trim().toUpperCase()
-
-                update({
-                    identity: {
-                        ...current.identity,
-                        gender: gender.startsWith('M') ? 'M' : 'F',
-                    },
-                })
-                return
-            }
-
+            // Parse final sensor values.
             const resultMatch = upper.match(
                 /^(TEMPERATURE|RAW_BPM|CORRECTED_BPM|SPO2|HEIGHT|WEIGHT|BMI|BMI_CATEGORY):\s*(.*)$/,
             )
@@ -356,6 +262,16 @@ export function useKiosk(): KioskController {
                         ...stateRef.current.results,
                         [resultMatch[1]]: resultMatch[2].trim(),
                     },
+                    screen: 'results',
+                    statusLine: 'Receiving measurement results...',
+                })
+                return
+            }
+
+            if (upper.includes('MEASUREMENT STARTED')) {
+                update({
+                    screen: 'sensor',
+                    statusLine: 'Arduino measurement started.',
                 })
                 return
             }
@@ -374,37 +290,43 @@ export function useKiosk(): KioskController {
                 update({
                     screen: 'results',
                     promptKind: 'finish',
-                    statusLine: 'End the session when you are finished.',
+                    statusLine: 'Measurement complete. End the session when ready.',
                 })
                 return
             }
 
             if (upper.includes('END COMMAND RECEIVED')) {
                 confirmModeRef.current = null
-                currentStepRef.current = ''
 
                 update({
                     screen: 'splash',
                     sectionTitle: '',
                     promptKind: null,
-                    identity: { name: '', age: '', gender: '' },
                     results: {},
                     stepIndex: 0,
                     error: '',
-                    statusLine: 'Session ended. Ready for the next patient.',
+                    statusLine: 'Session ended. Ready for the next measurement.',
                 })
                 return
             }
 
             if (upper === 'SYSTEM READY') {
                 update({
-                    statusLine: 'Arduino ready.',
+                    statusLine: 'Arduino system ready.',
                 })
                 return
             }
 
             if (upper.startsWith('ERROR:')) {
-                update({ error: line, statusLine: line })
+                update({
+                    error: line,
+                    statusLine: line,
+                })
+                return
+            }
+
+            if (upper.startsWith('WARNING:')) {
+                update({ statusLine: line })
             }
         })
 
@@ -432,9 +354,6 @@ export function useKiosk(): KioskController {
             start,
             calibrateWeight,
             answerConfirm,
-            submitName,
-            submitAge,
-            submitGender,
             finish,
         },
     }

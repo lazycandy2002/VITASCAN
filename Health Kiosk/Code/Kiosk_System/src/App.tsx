@@ -1,4 +1,5 @@
 
+import { type ComponentProps } from 'react'
 import { useKiosk } from './hooks/useKiosk'
 import SplashScreen from './screens/SplashScreen'
 import DashboardScreen from './screens/DashboardScreen'
@@ -18,7 +19,7 @@ function App() {
                 state.screen === 'results') && (
                 <DashboardScreen
                     state={state}
-                    actions={actions}
+                    actions={actions as unknown as ComponentProps<typeof DashboardScreen>['actions']}
                 />
             )}
         </div>
