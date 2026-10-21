@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { kioskSerial } from '../lib/serial'
 
 export type Screen = 'splash' | 'identity' | 'sensor' | 'results'
@@ -38,421 +38,492 @@ const SENSOR_STEPS = [
   'WEIGHT',
 ]
 
-function makeInitialState(connected: boolean): KioskState {
-  return {
-    screen: 'splash',
-    connected,
-    error: null,
-    sectionTitle: '',
-    statusLine: '',
-    promptKind: null,
-    identity: {
-      name: '',
-      age: '',
-      gender: '',
-    },
-    results: {},
-    stepIndex: 0,
-  }
-}
-
-// Ignore Arduino startup diagnostics that are not user-facing prompts.
-function isIgnoredStartupMessage(line: string): boolean {
-  const message = line.trim()
-
-  const ignoredMessages = [
-    'Preparing weight sensor...',
-    'Make sure the platform is EMPTY.',
-    'HX711 tare complete.',
-  ]
-
-  if (ignoredMessages.includes(message)) {
-    return true
-  }
-
-  return message.startsWith('Zero offset: ')
-}
+const initialState = (): KioskState => ({
+  screen: 'splash',
+  connected: kioskSerial.isConnected,
+  error: null,
+  sectionTitle: 'VitaScan',
+  statusLine: 'Connect the device to begin.',
+  promptKind: null,
+  identity: {
+    name: '',
+    age: '',
+    gender: '',
+  },
+  results: {},
+  stepIndex: 0,
+})
 
 export function useKiosk() {
-  const [state, setState] = useState<KioskState>(() =>
-    makeInitialState(false)
+  const [state, setState] = useState<KioskState>(initialState)
+
+  const updateState = useCallback(
+    (updates: Partial<KioskState>) => {
+      setState((prev) => ({ ...prev, ...updates }))
+    },
+    []
   )
 
-  const collectingResults = useRef(false)
+  const sendCommand = useCallback(async (command: string) => {
+    try {
+      await kioskSerial.sendLine(command)
+      updateState({ error: null })
+    } catch (err) {
+      updateState({
+        error:
+          err instanceof Error
+            ? err.message
+            : `Unable to send command: ${command}`,
+      })
+    }
+  }, [updateState])
 
-  const handleLine = useCallback((line: string) => {
-    const message = line.trim()
+  const enterIdentity = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      screen: 'identity',
+      error: null,
+      statusLine: prev.connected
+        ? 'Enter your information.'
+        : 'Connect the Arduino to begin.',
+    }))
+  }, [])
 
-    if (!message || isIgnoredStartupMessage(message)) {
+  const connectDevice = useCallback(async () => {
+    try {
+      updateState({
+        error: null,
+        statusLine: 'Connecting to Arduino...',
+      })
+
+      await kioskSerial.connect(9600)
+
+      updateState({
+        connected: true,
+        error: null,
+        statusLine: 'Device connected.',
+      })
+
+      await kioskSerial.sendLine('START')
+    } catch (err) {
+      updateState({
+        connected: kioskSerial.isConnected,
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Unable to connect to Arduino.',
+        statusLine: 'Unable to connect to device.',
+      })
+    }
+  }, [updateState])
+
+  // Send the exact calibration command expected by the Arduino sketch.
+  const calibrateWeight = useCallback(async () => {
+    if (!kioskSerial.isConnected) {
+      updateState({
+        error: 'Connect the Arduino first.',
+        statusLine: 'Weight calibration requires a connected device.',
+      })
       return
     }
 
-    // Opening the serial port can reset the Arduino Mega.
-    // Do not reset the React kiosk screen on SYSTEM READY.
-    if (message === 'SYSTEM READY') {
-      collectingResults.current = false
+    try {
+      updateState({
+        error: null,
+        statusLine: 'Starting weight calibration...',
+      })
+
+      await kioskSerial.sendLine('CALIBRATE')
+
+      updateState({
+        statusLine:
+          'Calibration command sent. Follow the instructions displayed by the Arduino.',
+      })
+    } catch (err) {
+      updateState({
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Unable to start weight calibration.',
+      })
+    }
+  }, [updateState])
+
+  const answerConfirm = useCallback(
+    async (answer: boolean) => {
+      const response = answer ? 'Y' : 'N'
+
+      await sendCommand(response)
+
+      setState((prev) => {
+        if (prev.promptKind === 'ready' && !answer) {
+          return {
+            ...initialState(),
+            connected: kioskSerial.isConnected,
+          }
+        }
+
+        return {
+          ...prev,
+          error: null,
+          promptKind: null,
+          statusLine: answer
+            ? 'Continuing measurement...'
+            : 'Please wait...',
+        }
+      })
+    },
+    [sendCommand]
+  )
+
+  const submitName = useCallback(
+    async (name: string) => {
+      const value = name.trim()
+
+      if (!value) {
+        updateState({ error: 'Please enter your name.' })
+        return
+      }
+
+      await sendCommand(value)
 
       setState((prev) => ({
         ...prev,
-        connected: kioskSerial.isConnected || prev.connected,
+        identity: { ...prev.identity, name: value },
         error: null,
+        promptKind: null,
+        statusLine: 'Name submitted.',
       }))
+    },
+    [sendCommand, updateState]
+  )
 
-      return
-    }
+  const submitAge = useCallback(
+    async (age: string | number) => {
+      const value = String(age).trim()
+      const numericAge = Number(value)
 
-    setState((prev) => {
-      const next: KioskState = { ...prev }
-
-      // Handle measurement step changes.
-      const stepMatch = message.match(/^STEP (\d+): (.+)$/)
-
-      if (stepMatch) {
-        const num = Number(stepMatch[1])
-        const title = stepMatch[2].trim()
-
-        next.sectionTitle = title
-        next.promptKind = null
-        next.statusLine = ''
-        next.error = null
-
-        if (num === 0) {
-          next.screen = 'identity'
-          next.stepIndex = 0
-        } else {
-          next.screen = 'sensor'
-
-          const idx = SENSOR_STEPS.indexOf(title)
-          next.stepIndex = idx >= 0 ? idx + 1 : num
-        }
-
-        return next
-      }
-
-      // Final measurement results begin.
-      if (message === 'FINAL RESULTS') {
-        collectingResults.current = true
-
-        next.screen = 'results'
-        next.results = {}
-        next.promptKind = null
-        next.statusLine = ''
-        next.error = null
-
-        return next
-      }
-
-      // Collect measurement result lines.
-      if (collectingResults.current) {
-        if (message === 'MEASUREMENT COMPLETE') {
-          collectingResults.current = false
-          return next
-        }
-
-        const kv = message.match(/^([A-Z_]+): (.+)$/)
-
-        if (kv) {
-          next.results = {
-            ...next.results,
-            [kv[1]]: kv[2],
-          }
-
-          return next
-        }
-      }
-
-      // Handle Arduino prompts.
-      switch (message) {
-        case 'Ready to start? Send Y or N.':
-          next.promptKind = 'ready'
-          next.statusLine = ''
-          next.error = null
-          return next
-
-        case 'Try again? Send Y or N.':
-          next.promptKind = 'retry'
-          next.statusLine = ''
-          next.error = null
-          return next
-
-        case 'Redo this step? Send Y or N.':
-          next.promptKind = 'redo'
-          next.statusLine = ''
-          next.error = null
-          return next
-
-        case 'Type your name and press Enter.':
-          next.promptKind = 'name'
-          next.statusLine = ''
-          next.error = null
-          return next
-
-        case 'Type your age (years) and press Enter.':
-          next.promptKind = 'age'
-          next.statusLine = ''
-          next.error = null
-          return next
-
-        case 'Send M for Male or F for Female.':
-          next.promptKind = 'gender'
-          next.statusLine = ''
-          next.error = null
-          return next
-
-        case 'Send END when finished.':
-          next.promptKind = 'finish'
-          next.statusLine = ''
-          next.error = null
-          return next
-
-        default:
-          break
-      }
-
-      // Update identity information received from Arduino.
-      if (message.startsWith('NAME: ')) {
-        next.identity = {
-          ...next.identity,
-          name: message.slice(6),
-        }
-
-        return next
-      }
-
-      if (message.startsWith('AGE: ')) {
-        next.identity = {
-          ...next.identity,
-          age: message.slice(5),
-        }
-
-        return next
-      }
-
-      if (message.startsWith('GENDER: ')) {
-        next.identity = {
-          ...next.identity,
-          gender: message.slice(8),
-        }
-
-        return next
-      }
-
-      // Reset the kiosk only when the session ends.
-      if (message === 'END COMMAND RECEIVED.') {
-        collectingResults.current = false
-        return makeInitialState(prev.connected)
-      }
-
-      // Display relevant live status messages.
       if (
-        !next.promptKind &&
-        (next.screen === 'sensor' || next.screen === 'identity')
+        !value ||
+        !Number.isInteger(numericAge) ||
+        numericAge < 1 ||
+        numericAge > 120
       ) {
-        next.statusLine = message
+        updateState({ error: 'Enter a valid age from 1 to 120.' })
+        return
       }
 
-      return next
+      await sendCommand(value)
+
+      setState((prev) => ({
+        ...prev,
+        identity: { ...prev.identity, age: value },
+        error: null,
+        promptKind: null,
+        statusLine: 'Age submitted.',
+      }))
+    },
+    [sendCommand, updateState]
+  )
+
+  const submitGender = useCallback(
+    async (gender: 'M' | 'F') => {
+      await sendCommand(gender)
+
+      setState((prev) => ({
+        ...prev,
+        identity: {
+          ...prev.identity,
+          gender: gender === 'M' ? 'Male' : 'Female',
+        },
+        error: null,
+        promptKind: null,
+        statusLine: 'Gender submitted.',
+      }))
+    },
+    [sendCommand]
+  )
+
+  const finish = useCallback(async () => {
+    updateState({
+      error: null,
+      promptKind: null,
+      statusLine: 'Finishing measurement...',
     })
-  }, [])
 
-  // Subscribe to Arduino messages.
-  useEffect(() => {
-    return kioskSerial.onLine(handleLine)
-  }, [handleLine])
+    await sendCommand('Y')
+  }, [sendCommand, updateState])
 
-  // Keep the connection indicator synchronized with serial status.
   useEffect(() => {
     return kioskSerial.onStatus((connected) => {
       setState((prev) => ({
         ...prev,
         connected,
         error: connected ? null : prev.error,
+        statusLine: connected
+          ? prev.statusLine
+          : 'Device disconnected.',
       }))
     })
   }, [])
 
-  // Navigate from the splash screen to identity.
-  const enterIdentity = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      screen: 'identity',
-      error: null,
-    }))
-  }, [])
+  useEffect(() => {
+    const unsubscribe = kioskSerial.onLine((rawLine) => {
+      const line = rawLine.trim()
 
-  // Connect to Arduino and send START.
-  const connectDevice = useCallback(async () => {
-    setState((prev) => ({
-      ...prev,
-      error: null,
-    }))
+      if (!line) return
 
-    try {
-      if (!kioskSerial.isConnected) {
-        await kioskSerial.connect(9600)
+      // Ignore weight-sensor startup and tare diagnostics.
+      if (
+        line.startsWith('Preparing weight sensor') ||
+        line.startsWith('Make sure the platform is EMPTY') ||
+        line.startsWith('HX711 tare complete') ||
+        line.startsWith('Zero offset:')
+      ) {
+        return
       }
 
-      setState((prev) => ({
-        ...prev,
-        connected: true,
-        error: null,
-      }))
-
-      collectingResults.current = false
-
-      await kioskSerial.sendLine('START')
-    } catch (err) {
-      setState((prev) => ({
-        ...prev,
-        connected: kioskSerial.isConnected,
-        error:
-          err instanceof Error
-            ? err.message
-            : 'Unable to connect to Arduino.',
-      }))
-    }
-  }, [])
-
-  // Answer ready, retry, and redo prompts.
-  const answerConfirm = useCallback((yes: boolean) => {
-    setState((prev) => {
-      if (!yes && prev.promptKind === 'ready') {
-        collectingResults.current = false
-        return makeInitialState(prev.connected)
+      // Do not reset the React interface on Arduino startup messages.
+      if (
+        line === 'SYSTEM READY' ||
+        line === 'Send START to begin.' ||
+        line === 'Send CALIBRATE to calibrate weight.'
+      ) {
+        setState((prev) => ({
+          ...prev,
+          connected: kioskSerial.isConnected,
+          error: null,
+          statusLine:
+            line === 'SYSTEM READY'
+              ? 'System ready.'
+              : line === 'Send CALIBRATE to calibrate weight.'
+                ? 'Arduino is ready for weight calibration.'
+                : prev.statusLine,
+        }))
+        return
       }
 
-      return {
-        ...prev,
-        promptKind: null,
-        error: null,
+      // Reset only when the Arduino explicitly ends the session.
+      if (line === 'END COMMAND RECEIVED.') {
+        setState({
+          ...initialState(),
+          connected: kioskSerial.isConnected,
+          statusLine: 'Measurement session ended.',
+        })
+        return
       }
-    })
 
-    void kioskSerial.sendLine(yes ? 'Y' : 'N').catch((err) => {
+      // Arduino sensor-step messages, e.g. STEP 1: TEMPERATURE.
+      const stepMatch = line.match(/^STEP\s*(\d+)\s*:\s*(.+)$/i)
+
+      if (stepMatch) {
+        const stepNumber = Number(stepMatch[1])
+        const title = stepMatch[2].trim()
+
+        setState((prev) => ({
+          ...prev,
+          screen: 'sensor',
+          stepIndex: Math.max(0, stepNumber - 1),
+          sectionTitle: title,
+          statusLine: `Measuring ${title.toLowerCase()}...`,
+          promptKind: null,
+          error: null,
+        }))
+        return
+      }
+
+      if (/^FINAL RESULTS$/i.test(line)) {
+        setState((prev) => ({
+          ...prev,
+          screen: 'results',
+          sectionTitle: 'Final Results',
+          statusLine: 'Measurement completed.',
+          promptKind: null,
+          error: null,
+        }))
+        return
+      }
+
+      if (/^MEASUREMENT COMPLETE\.?$/i.test(line)) {
+        setState((prev) => ({
+          ...prev,
+          screen: 'results',
+          sectionTitle: 'Final Results',
+          statusLine: 'Measurement completed.',
+          promptKind: null,
+          error: null,
+        }))
+        return
+      }
+
+      // Identity information reported by the Arduino.
+      const identityMatch = line.match(/^(NAME|AGE|GENDER)\s*:\s*(.*)$/i)
+
+      if (identityMatch) {
+        const field = identityMatch[1].toLowerCase()
+        const value = identityMatch[2].trim()
+
+        setState((prev) => ({
+          ...prev,
+          identity: {
+            ...prev.identity,
+            [field]:
+              field === 'gender'
+                ? value.toUpperCase() === 'M'
+                  ? 'Male'
+                  : value.toUpperCase() === 'F'
+                    ? 'Female'
+                    : value
+                : value,
+          },
+        }))
+        return
+      }
+
+      // Sensor/result lines, e.g. TEMP:36.7, WEIGHT:65.
+      const resultMatch = line.match(/^([A-Z][A-Z0-9 _/-]*)\s*:\s*(.+)$/i)
+
+      if (resultMatch) {
+        const key = resultMatch[1].trim().toUpperCase()
+        const value = resultMatch[2].trim()
+
+        // Do not treat prompts as sensor measurements.
+        if (
+          /^(PROMPT|MESSAGE|STATUS|ERROR)$/.test(key)
+        ) {
+          setState((prev) => ({
+            ...prev,
+            statusLine: value,
+          }))
+          return
+        }
+
+        setState((prev) => {
+          const results = { ...prev.results, [key]: value }
+
+          let stepIndex = prev.stepIndex
+          const normalizedKey = key.replace(/[_-]/g, ' ')
+
+          const matchedStep = SENSOR_STEPS.findIndex((step) =>
+            normalizedKey.includes(step)
+          )
+
+          if (matchedStep >= 0) stepIndex = matchedStep
+
+          return {
+            ...prev,
+            results,
+            stepIndex,
+            statusLine: `${key}: ${value}`,
+          }
+        })
+        return
+      }
+
+      // Prompts sent by the Arduino.
+      const lowerLine = line.toLowerCase()
+
+      if (
+        lowerLine.includes('start measurement') ||
+        lowerLine.includes('ready to start') ||
+        lowerLine.includes('begin measurement')
+      ) {
+        setState((prev) => ({
+          ...prev,
+          screen: 'sensor',
+          promptKind: 'ready',
+          statusLine: line,
+          error: null,
+        }))
+        return
+      }
+
+      if (
+        lowerLine.includes('retry') ||
+        lowerLine.includes('try again')
+      ) {
+        setState((prev) => ({
+          ...prev,
+          promptKind: 'retry',
+          statusLine: line,
+          error: null,
+        }))
+        return
+      }
+
+      if (
+        lowerLine.includes('redo') ||
+        lowerLine.includes('repeat measurement')
+      ) {
+        setState((prev) => ({
+          ...prev,
+          promptKind: 'redo',
+          statusLine: line,
+          error: null,
+        }))
+        return
+      }
+
+      if (lowerLine.includes('enter name') || lowerLine.includes('your name')) {
+        setState((prev) => ({
+          ...prev,
+          screen: 'identity',
+          promptKind: 'name',
+          statusLine: line,
+          error: null,
+        }))
+        return
+      }
+
+      if (lowerLine.includes('enter age') || lowerLine.includes('your age')) {
+        setState((prev) => ({
+          ...prev,
+          screen: 'identity',
+          promptKind: 'age',
+          statusLine: line,
+          error: null,
+        }))
+        return
+      }
+
+      if (
+        lowerLine.includes('select gender') ||
+        lowerLine.includes('enter gender') ||
+        lowerLine.includes('your gender')
+      ) {
+        setState((prev) => ({
+          ...prev,
+          screen: 'identity',
+          promptKind: 'gender',
+          statusLine: line,
+          error: null,
+        }))
+        return
+      }
+
+      if (
+        lowerLine.includes('finish') ||
+        lowerLine.includes('save results') ||
+        lowerLine.includes('end measurement')
+      ) {
+        setState((prev) => ({
+          ...prev,
+          screen: 'results',
+          promptKind: 'finish',
+          statusLine: line,
+          error: null,
+        }))
+        return
+      }
+
+      // Show other Arduino messages without resetting the UI.
       setState((prev) => ({
         ...prev,
-        error:
-          err instanceof Error
-            ? err.message
-            : 'Unable to send the response to Arduino.',
+        statusLine: line,
       }))
     })
-  }, [])
 
-  // Submit the user's name.
-  const submitName = useCallback((value: string) => {
-    const name = value.trim()
-
-    if (!name) {
-      setState((prev) => ({
-        ...prev,
-        error: 'Please enter your name.',
-      }))
-      return
-    }
-
-    setState((prev) => ({
-      ...prev,
-      identity: {
-        ...prev.identity,
-        name,
-      },
-      promptKind: null,
-      error: null,
-    }))
-
-    void kioskSerial.sendLine(name).catch((err) => {
-      setState((prev) => ({
-        ...prev,
-        error:
-          err instanceof Error
-            ? err.message
-            : 'Unable to send the name to Arduino.',
-      }))
-    })
-  }, [])
-
-  // Submit and validate the user's age.
-  const submitAge = useCallback((value: string) => {
-    const age = value.trim()
-    const parsedAge = Number(age)
-
-    if (
-      !age ||
-      !Number.isInteger(parsedAge) ||
-      parsedAge <= 0 ||
-      parsedAge > 120
-    ) {
-      setState((prev) => ({
-        ...prev,
-        error: 'Please enter a valid age.',
-      }))
-      return
-    }
-
-    setState((prev) => ({
-      ...prev,
-      identity: {
-        ...prev.identity,
-        age,
-      },
-      promptKind: null,
-      error: null,
-    }))
-
-    void kioskSerial.sendLine(age).catch((err) => {
-      setState((prev) => ({
-        ...prev,
-        error:
-          err instanceof Error
-            ? err.message
-            : 'Unable to send the age to Arduino.',
-      }))
-    })
-  }, [])
-
-  // Submit gender.
-  const submitGender = useCallback((value: 'M' | 'F') => {
-    const gender = value === 'M' ? 'Male' : 'Female'
-
-    setState((prev) => ({
-      ...prev,
-      identity: {
-        ...prev.identity,
-        gender,
-      },
-      promptKind: null,
-      error: null,
-    }))
-
-    void kioskSerial.sendLine(value).catch((err) => {
-      setState((prev) => ({
-        ...prev,
-        error:
-          err instanceof Error
-            ? err.message
-            : 'Unable to send gender to Arduino.',
-      }))
-    })
-  }, [])
-
-  // Finish the measurement cycle.
-  const finish = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      promptKind: null,
-      error: null,
-    }))
-
-    void kioskSerial.sendLine('END').catch((err) => {
-      setState((prev) => ({
-        ...prev,
-        error:
-          err instanceof Error
-            ? err.message
-            : 'Unable to finish the measurement cycle.',
-      }))
-    })
+    return unsubscribe
   }, [])
 
   return {
@@ -460,6 +531,7 @@ export function useKiosk() {
     actions: {
       enterIdentity,
       connectDevice,
+      calibrateWeight,
       answerConfirm,
       submitName,
       submitAge,

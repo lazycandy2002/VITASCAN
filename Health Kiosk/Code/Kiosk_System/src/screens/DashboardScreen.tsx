@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react'
 import type { KioskState } from '../hooks/useKiosk'
 import ConnectionBar from '../components/ConnectionBar'
@@ -21,6 +22,7 @@ import logo from '../assets/VITASCAN LOGO.jpg'
 
 interface Actions {
     connectDevice: () => void
+    calibrateWeight: () => void
     answerConfirm: (yes: boolean) => void
     submitName: (v: string) => void
     submitAge: (v: string) => void
@@ -34,15 +36,50 @@ interface Props {
 }
 
 const VITALS = [
-    { key: 'TEMPERATURE', label: 'Temperature', colorClass: 'v-temp', icon: <IconThermometer /> },
-    { key: 'PULSE RATE', label: 'Pulse rate', colorClass: 'v-pulse', icon: <IconHeart /> },
-    { key: 'OXYGEN', label: 'Oxygen', colorClass: 'v-oxygen', icon: <IconOxygen /> },
-    { key: 'HEIGHT', label: 'Height', colorClass: 'v-height', icon: <IconRuler /> },
-    { key: 'WEIGHT', label: 'Weight', colorClass: 'v-weight', icon: <IconWeight /> },
+    {
+        key: 'TEMPERATURE',
+        label: 'Temperature',
+        colorClass: 'v-temp',
+        icon: <IconThermometer />,
+    },
+    {
+        key: 'PULSE RATE',
+        label: 'Pulse rate',
+        colorClass: 'v-pulse',
+        icon: <IconHeart />,
+    },
+    {
+        key: 'OXYGEN',
+        label: 'Oxygen',
+        colorClass: 'v-oxygen',
+        icon: <IconOxygen />,
+    },
+    {
+        key: 'HEIGHT',
+        label: 'Height',
+        colorClass: 'v-height',
+        icon: <IconRuler />,
+    },
+    {
+        key: 'WEIGHT',
+        label: 'Weight',
+        colorClass: 'v-weight',
+        icon: <IconWeight />,
+    },
 ] as const
 
 export default function DashboardScreen({ state, actions }: Props) {
-    const { screen, sectionTitle, promptKind, identity, results, stepIndex, connected, error, statusLine } = state
+    const {
+        screen,
+        sectionTitle,
+        promptKind,
+        identity,
+        results,
+        stepIndex,
+        connected,
+        error,
+        statusLine,
+    } = state
 
     // Local editable copies of identity fields
     const [nameValue, setNameValue] = useState(identity.name ?? '')
@@ -53,7 +90,7 @@ export default function DashboardScreen({ state, actions }: Props) {
     useEffect(() => setAgeValue(identity.age ?? ''), [identity.age])
     useEffect(() => setGenderValue(identity.gender ?? ''), [identity.gender])
 
-    // ---- Login / Admin dashboard state ----
+    // Login / Admin dashboard state
     const [isLoginOpen, setIsLoginOpen] = useState(false)
     const [loggedInUser, setLoggedInUser] = useState<string | null>(null)
     const [isAdminOpen, setIsAdminOpen] = useState(false)
@@ -80,10 +117,17 @@ export default function DashboardScreen({ state, actions }: Props) {
                         : null
             : null
 
-    const resultsReady = screen === 'results' || Object.keys(results).length > 0
+    const resultsReady =
+        screen === 'results' || Object.keys(results).length > 0
 
-    // Progress: how many of the 5 vitals are finished
-    const doneCount = screen === 'results' ? VITALS.length : screen === 'sensor' ? Math.max(0, stepIndex - 1) : 0
+    // Progress: how many of the five vitals are finished
+    const doneCount =
+        screen === 'results'
+            ? VITALS.length
+            : screen === 'sensor'
+                ? Math.max(0, stepIndex - 1)
+                : 0
+
     const progressPct = (doneCount / VITALS.length) * 100
 
     return (
@@ -93,18 +137,32 @@ export default function DashboardScreen({ state, actions }: Props) {
                     <img src={logo} alt="" className="topbar-logo" />
                     <div>
                         <div className="topbar-title">VitaScan</div>
-                        <div className="topbar-sub">Vital signs &amp; BMI kiosk</div>
+                        <div className="topbar-sub">
+                            Vital signs &amp; BMI kiosk
+                        </div>
                     </div>
                 </div>
+
                 <div className="topbar-actions">
-                    <ConnectionBar connected={connected} error={error} onConnect={actions.connectDevice} />
+                    <ConnectionBar
+                        connected={connected}
+                        error={error}
+                        onConnect={actions.connectDevice}
+                    />
+
                     <button
                         type="button"
                         className="login-btn"
-                        onClick={() => (loggedInUser ? setIsAdminOpen(true) : setIsLoginOpen(true))}
+                        onClick={() =>
+                            loggedInUser
+                                ? setIsAdminOpen(true)
+                                : setIsLoginOpen(true)
+                        }
                     >
                         <IconPerson className="icon-sm" />
-                        {loggedInUser ? `${loggedInUser} · Records` : 'Staff login'}
+                        {loggedInUser
+                            ? `${loggedInUser} · Records`
+                            : 'Staff login'}
                     </button>
                 </div>
             </header>
@@ -120,12 +178,22 @@ export default function DashboardScreen({ state, actions }: Props) {
 
                     {promptKind === 'ready' && screen === 'identity' && (
                         <div className="inline-prompt">
-                            <p>Ready to enter your {activeIdentityField}?</p>
+                            <p>
+                                Ready to enter your {activeIdentityField}?
+                            </p>
                             <div className="btn-row">
-                                <button className="btn btn-primary btn-sm" onClick={() => actions.answerConfirm(true)}>
+                                <button
+                                    type="button"
+                                    className="btn btn-primary btn-sm"
+                                    onClick={() => actions.answerConfirm(true)}
+                                >
                                     Yes
                                 </button>
-                                <button className="btn btn-ghost btn-sm" onClick={() => actions.answerConfirm(false)}>
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => actions.answerConfirm(false)}
+                                >
                                     Cancel
                                 </button>
                             </div>
@@ -134,20 +202,29 @@ export default function DashboardScreen({ state, actions }: Props) {
 
                     <div className="field-row">
                         <label className="field-label">
-                            <IconPerson className="icon-sm" /> Name
+                            <IconPerson className="icon-sm" />
+                            Name
                         </label>
+
                         <form
                             onSubmit={(e) => {
                                 e.preventDefault()
-                                if (nameValue.trim()) actions.submitName(nameValue.trim())
+                                if (nameValue.trim()) {
+                                    actions.submitName(nameValue.trim())
+                                }
                             }}
                         >
                             <input
                                 className="field-input"
                                 value={nameValue}
-                                onChange={(e) => setNameValue(e.target.value)}
+                                onChange={(e) =>
+                                    setNameValue(e.target.value)
+                                }
                                 onBlur={() => {
-                                    if (nameValue.trim() && nameValue.trim() !== identity.name) {
+                                    if (
+                                        nameValue.trim() &&
+                                        nameValue.trim() !== identity.name
+                                    ) {
                                         actions.submitName(nameValue.trim())
                                     }
                                 }}
@@ -158,13 +235,18 @@ export default function DashboardScreen({ state, actions }: Props) {
 
                     <div className="field-row">
                         <label className="field-label">
-                            <IconCalendar className="icon-sm" /> Age
+                            <IconCalendar className="icon-sm" />
+                            Age
                         </label>
+
                         <form
                             onSubmit={(e) => {
                                 e.preventDefault()
                                 const n = Number(ageValue)
-                                if (n > 0 && n <= 120) actions.submitAge(String(ageValue).trim())
+
+                                if (n > 0 && n <= 120) {
+                                    actions.submitAge(ageValue.trim())
+                                }
                             }}
                         >
                             <input
@@ -173,11 +255,21 @@ export default function DashboardScreen({ state, actions }: Props) {
                                 min={1}
                                 max={120}
                                 value={ageValue}
-                                onChange={(e) => setAgeValue(e.target.value)}
+                                onChange={(e) =>
+                                    setAgeValue(e.target.value)
+                                }
                                 onBlur={() => {
                                     const n = Number(ageValue)
-                                    if (n > 0 && n <= 120 && String(ageValue).trim() !== String(identity.age)) {
-                                        actions.submitAge(String(ageValue).trim())
+
+                                    if (
+                                        n > 0 &&
+                                        n <= 120 &&
+                                        String(ageValue).trim() !==
+                                            String(identity.age)
+                                    ) {
+                                        actions.submitAge(
+                                            ageValue.trim()
+                                        )
                                     }
                                 }}
                                 placeholder="Enter age"
@@ -187,15 +279,20 @@ export default function DashboardScreen({ state, actions }: Props) {
 
                     <div className="field-row">
                         <label className="field-label">
-                            <IconGender className="icon-sm" /> Gender
+                            <IconGender className="icon-sm" />
+                            Gender
                         </label>
+
                         <select
                             className="field-input"
                             value={genderValue}
                             onChange={(e) => {
-                                const v = e.target.value
-                                setGenderValue(v)
-                                if (v === 'M' || v === 'F') actions.submitGender(v)
+                                const value = e.target.value
+                                setGenderValue(value)
+
+                                if (value === 'M' || value === 'F') {
+                                    actions.submitGender(value)
+                                }
                             }}
                         >
                             <option value="" disabled>
@@ -208,7 +305,10 @@ export default function DashboardScreen({ state, actions }: Props) {
 
                     {!promptKind && screen === 'identity' && (
                         <p className="status-line">
-                            {statusLine || (connected ? 'Waiting for device…' : 'Tap Connect above to begin.')}
+                            {statusLine ||
+                                (connected
+                                    ? 'Waiting for device…'
+                                    : 'Tap Connect above to begin.')}
                         </p>
                     )}
                 </section>
@@ -221,24 +321,47 @@ export default function DashboardScreen({ state, actions }: Props) {
                             {doneCount} of {VITALS.length} complete
                         </span>
                     </div>
-                    <div className="vitals-progress" aria-hidden="true">
+
+                    <div
+                        className="vitals-progress"
+                        aria-hidden="true"
+                    >
                         <span style={{ width: `${progressPct}%` }} />
                     </div>
 
                     <div className="vitals-list">
                         {VITALS.map((v, i) => {
                             const idx = i + 1
-                            const isActive = screen === 'sensor' && idx === stepIndex
-                            const isDone = screen === 'sensor' ? idx < stepIndex : screen === 'results'
-                            const status = isDone ? 'Done' : isActive ? 'In progress' : 'Waiting'
+                            const isActive =
+                                screen === 'sensor' &&
+                                idx === stepIndex
+                            const isDone =
+                                screen === 'sensor'
+                                    ? idx < stepIndex
+                                    : screen === 'results'
+
+                            const status = isDone
+                                ? 'Done'
+                                : isActive
+                                    ? 'In progress'
+                                    : 'Waiting'
+
                             return (
                                 <div
                                     key={v.key}
-                                    className={`vitals-row ${v.colorClass} ${isActive ? 'active' : ''} ${isDone ? 'done' : ''}`}
+                                    className={`vitals-row ${v.colorClass} ${
+                                        isActive ? 'active' : ''
+                                    } ${isDone ? 'done' : ''}`}
                                 >
-                                    <span className="vitals-icon">{isDone ? <IconCheck /> : v.icon}</span>
-                                    <span className="vitals-label">{v.label}</span>
-                                    <span className="vitals-status">{status}</span>
+                                    <span className="vitals-icon">
+                                        {isDone ? <IconCheck /> : v.icon}
+                                    </span>
+                                    <span className="vitals-label">
+                                        {v.label}
+                                    </span>
+                                    <span className="vitals-status">
+                                        {status}
+                                    </span>
                                 </div>
                             )
                         })}
@@ -248,57 +371,111 @@ export default function DashboardScreen({ state, actions }: Props) {
                         <div className="active-step-panel">
                             {promptKind === 'ready' && (
                                 <div className="inline-prompt">
-                                    <p>Ready to measure {sectionTitle.toLowerCase()}?</p>
+                                    <p>
+                                        Ready to measure{' '}
+                                        {sectionTitle.toLowerCase()}?
+                                    </p>
                                     <div className="btn-row">
-                                        <button className="btn btn-primary btn-sm" onClick={() => actions.answerConfirm(true)}>
+                                        <button
+                                            type="button"
+                                            className="btn btn-primary btn-sm"
+                                            onClick={() =>
+                                                actions.answerConfirm(true)
+                                            }
+                                        >
                                             Yes
                                         </button>
-                                        <button className="btn btn-ghost btn-sm" onClick={() => actions.answerConfirm(false)}>
+                                        <button
+                                            type="button"
+                                            className="btn btn-ghost btn-sm"
+                                            onClick={() =>
+                                                actions.answerConfirm(false)
+                                            }
+                                        >
                                             Cancel
                                         </button>
                                     </div>
                                 </div>
                             )}
+
                             {promptKind === 'retry' && (
                                 <div className="inline-prompt">
-                                    <p className="warn-text">No valid reading was captured.</p>
+                                    <p className="warn-text">
+                                        No valid reading was captured.
+                                    </p>
                                     <div className="btn-row">
-                                        <button className="btn btn-primary btn-sm" onClick={() => actions.answerConfirm(true)}>
+                                        <button
+                                            type="button"
+                                            className="btn btn-primary btn-sm"
+                                            onClick={() =>
+                                                actions.answerConfirm(true)
+                                            }
+                                        >
                                             Try again
                                         </button>
-                                        <button className="btn btn-ghost btn-sm" onClick={() => actions.answerConfirm(false)}>
+                                        <button
+                                            type="button"
+                                            className="btn btn-ghost btn-sm"
+                                            onClick={() =>
+                                                actions.answerConfirm(false)
+                                            }
+                                        >
                                             Skip
                                         </button>
                                     </div>
                                 </div>
                             )}
+
                             {promptKind === 'redo' && (
                                 <div className="inline-prompt">
-                                    <p className="ok-text">Reading captured.</p>
+                                    <p className="ok-text">
+                                        Reading captured.
+                                    </p>
                                     <div className="btn-row">
-                                        <button className="btn btn-primary btn-sm" onClick={() => actions.answerConfirm(false)}>
+                                        <button
+                                            type="button"
+                                            className="btn btn-primary btn-sm"
+                                            onClick={() =>
+                                                actions.answerConfirm(false)
+                                            }
+                                        >
                                             Accept
                                         </button>
-                                        <button className="btn btn-ghost btn-sm" onClick={() => actions.answerConfirm(true)}>
+                                        <button
+                                            type="button"
+                                            className="btn btn-ghost btn-sm"
+                                            onClick={() =>
+                                                actions.answerConfirm(true)
+                                            }
+                                        >
                                             Redo
                                         </button>
                                     </div>
                                 </div>
                             )}
-                            {!promptKind && <p className="status-line">{statusLine || 'Preparing sensor…'}</p>}
+
+                            {!promptKind && (
+                                <p className="status-line">
+                                    {statusLine || 'Preparing sensor…'}
+                                </p>
+                            )}
                         </div>
                     )}
 
                     <div className="vitals-actions">
                         <button
                             type="button"
-                            className={`action-row results-row-btn ${resultsReady ? 'enabled' : ''}`}
+                            className={`action-row results-row-btn ${
+                                resultsReady ? 'enabled' : ''
+                            }`}
                             disabled={!resultsReady}
                         >
                             <span className="vitals-icon v-results">
                                 <IconDocument />
                             </span>
-                            <span className="vitals-label">View all data and BMI</span>
+                            <span className="vitals-label">
+                                View all data and BMI
+                            </span>
                             <span className="vitals-chevron">
                                 <IconChevronRight />
                             </span>
@@ -313,7 +490,9 @@ export default function DashboardScreen({ state, actions }: Props) {
                             <span className="vitals-icon v-end">
                                 <IconPower />
                             </span>
-                            <span className="vitals-label">End session</span>
+                            <span className="vitals-label">
+                                End session
+                            </span>
                             <span className="vitals-chevron">
                                 <IconChevronRight />
                             </span>
@@ -323,20 +502,55 @@ export default function DashboardScreen({ state, actions }: Props) {
 
                 {/* ---------- Guide panel ---------- */}
                 <aside className="brand-panel">
-                    <p className="brand-hint">Stand still and follow the prompts. Each measurement takes a few seconds.</p>
+                    <p className="brand-hint">
+                        Stand still and follow the prompts. Each measurement
+                        takes a few seconds.
+                    </p>
+
                     <div className="brand-figure">
                         <div className="scan-ring" />
-                        <svg viewBox="0 0 120 220" className="figure-svg">
+                        <svg
+                            viewBox="0 0 120 220"
+                            className="figure-svg"
+                        >
                             <circle cx="60" cy="30" r="18" />
                             <path d="M60 48c-20 0-32 14-32 34v50c0 8 6 14 14 14h4v50h10v-50h8v50h10v-50h4c8 0 14-6 14-14V82c0-20-12-34-32-34Z" />
                         </svg>
                         <span className="figure-pulse" />
                     </div>
+
+                    {/* ---------- Weight calibration ---------- */}
+                    <div className="weight-calibration">
+                        <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={actions.calibrateWeight}
+                            disabled={!connected}
+                        >
+                            <IconWeight className="icon-sm" />
+                            Calibrate Weight
+                        </button>
+
+                        <p className="brand-hint">
+                            Ensure the weighing platform is empty before
+                            starting calibration.
+                        </p>
+                    </div>
                 </aside>
             </div>
 
-            <LoginModal open={isLoginOpen} onClose={() => setIsLoginOpen(false)} onLogin={handleLogin} />
-            {isAdminOpen && <AdminDashboard onClose={() => setIsAdminOpen(false)} onLogout={handleLogout} />}
+            <LoginModal
+                open={isLoginOpen}
+                onClose={() => setIsLoginOpen(false)}
+                onLogin={handleLogin}
+            />
+
+            {isAdminOpen && (
+                <AdminDashboard
+                    onClose={() => setIsAdminOpen(false)}
+                    onLogout={handleLogout}
+                />
+            )}
         </div>
     )
 }
