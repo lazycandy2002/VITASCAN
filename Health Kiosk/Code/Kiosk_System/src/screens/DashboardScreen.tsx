@@ -35,7 +35,7 @@ interface Props {
 
 const VITALS = [
     { key: 'TEMPERATURE', label: 'Temperature', colorClass: 'v-temp', icon: <IconThermometer /> },
-    { key: 'PULSE RATE', label: 'Pulse Rate', colorClass: 'v-pulse', icon: <IconHeart /> },
+    { key: 'PULSE RATE', label: 'Pulse rate', colorClass: 'v-pulse', icon: <IconHeart /> },
     { key: 'OXYGEN', label: 'Oxygen', colorClass: 'v-oxygen', icon: <IconOxygen /> },
     { key: 'HEIGHT', label: 'Height', colorClass: 'v-height', icon: <IconRuler /> },
     { key: 'WEIGHT', label: 'Weight', colorClass: 'v-weight', icon: <IconWeight /> },
@@ -82,23 +82,38 @@ export default function DashboardScreen({ state, actions }: Props) {
 
     const resultsReady = screen === 'results' || Object.keys(results).length > 0
 
+    // Progress: how many of the 5 vitals are finished
+    const doneCount = screen === 'results' ? VITALS.length : screen === 'sensor' ? Math.max(0, stepIndex - 1) : 0
+    const progressPct = (doneCount / VITALS.length) * 100
+
     return (
         <div className="dashboard">
-            <div className="dashboard-topbar">
-                <button
-                    type="button"
-                    className="login-btn"
-                    onClick={() => (loggedInUser ? setIsAdminOpen(true) : setIsLoginOpen(true))}
-                >
-                    <IconPerson className="icon-sm" />
-                    {loggedInUser ? `${loggedInUser} · Records` : 'Login'}
-                </button>
-                <ConnectionBar connected={connected} error={error} onConnect={actions.connectDevice} />
-            </div>
+            <header className="dashboard-topbar">
+                <div className="topbar-brand">
+                    <img src={logo} alt="" className="topbar-logo" />
+                    <div>
+                        <div className="topbar-title">VitaScan</div>
+                        <div className="topbar-sub">Vital signs &amp; BMI kiosk</div>
+                    </div>
+                </div>
+                <div className="topbar-actions">
+                    <ConnectionBar connected={connected} error={error} onConnect={actions.connectDevice} />
+                    <button
+                        type="button"
+                        className="login-btn"
+                        onClick={() => (loggedInUser ? setIsAdminOpen(true) : setIsLoginOpen(true))}
+                    >
+                        <IconPerson className="icon-sm" />
+                        {loggedInUser ? `${loggedInUser} · Records` : 'Staff login'}
+                    </button>
+                </div>
+            </header>
 
             <div className="dashboard-body">
-                {/* ---------- Identity card ---------- */}
-                <div className="identity-card">
+                {/* ---------- Patient card ---------- */}
+                <section className="identity-card">
+                    <h3 className="card-heading">Patient</h3>
+
                     <div className="identity-avatar">
                         <IconPerson className="icon-lg" />
                     </div>
@@ -136,7 +151,7 @@ export default function DashboardScreen({ state, actions }: Props) {
                                         actions.submitName(nameValue.trim())
                                     }
                                 }}
-                                placeholder="Enter name..."
+                                placeholder="Enter name"
                             />
                         </form>
                     </div>
@@ -165,7 +180,7 @@ export default function DashboardScreen({ state, actions }: Props) {
                                         actions.submitAge(String(ageValue).trim())
                                     }
                                 }}
-                                placeholder="Enter age..."
+                                placeholder="Enter age"
                             />
                         </form>
                     </div>
@@ -184,7 +199,7 @@ export default function DashboardScreen({ state, actions }: Props) {
                             }}
                         >
                             <option value="" disabled>
-                                Select gender...
+                                Select gender
                             </option>
                             <option value="M">Male</option>
                             <option value="F">Female</option>
@@ -193,30 +208,41 @@ export default function DashboardScreen({ state, actions }: Props) {
 
                     {!promptKind && screen === 'identity' && (
                         <p className="status-line">
-                            {statusLine || (connected ? 'Waiting for device…' : 'Tap Connect Device above to begin.')}
+                            {statusLine || (connected ? 'Waiting for device…' : 'Tap Connect above to begin.')}
                         </p>
                     )}
-                </div>
+                </section>
 
                 {/* ---------- Vitals card ---------- */}
-                <div className="vitals-card">
-                    {VITALS.map((v, i) => {
-                        const idx = i + 1
-                        const isActive = screen === 'sensor' && idx === stepIndex
-                        const isDone = screen === 'sensor' ? idx < stepIndex : screen === 'results'
-                        return (
-                            <div
-                                key={v.key}
-                                className={`vitals-row ${v.colorClass} ${isActive ? 'active' : ''} ${isDone ? 'done' : ''}`}
-                            >
-                                <span className="vitals-icon">{isDone ? <IconCheck /> : v.icon}</span>
-                                <span className="vitals-label">{v.label}</span>
-                                <span className="vitals-chevron">
-                                    <IconChevronRight />
-                                </span>
-                            </div>
-                        )
-                    })}
+                <section className="vitals-card">
+                    <div className="vitals-head">
+                        <h3 className="card-heading">Vital signs</h3>
+                        <span className="vitals-count">
+                            {doneCount} of {VITALS.length} complete
+                        </span>
+                    </div>
+                    <div className="vitals-progress" aria-hidden="true">
+                        <span style={{ width: `${progressPct}%` }} />
+                    </div>
+
+                    <div className="vitals-list">
+                        {VITALS.map((v, i) => {
+                            const idx = i + 1
+                            const isActive = screen === 'sensor' && idx === stepIndex
+                            const isDone = screen === 'sensor' ? idx < stepIndex : screen === 'results'
+                            const status = isDone ? 'Done' : isActive ? 'In progress' : 'Waiting'
+                            return (
+                                <div
+                                    key={v.key}
+                                    className={`vitals-row ${v.colorClass} ${isActive ? 'active' : ''} ${isDone ? 'done' : ''}`}
+                                >
+                                    <span className="vitals-icon">{isDone ? <IconCheck /> : v.icon}</span>
+                                    <span className="vitals-label">{v.label}</span>
+                                    <span className="vitals-status">{status}</span>
+                                </div>
+                            )
+                        })}
+                    </div>
 
                     {screen === 'sensor' && (
                         <div className="active-step-panel">
@@ -238,7 +264,7 @@ export default function DashboardScreen({ state, actions }: Props) {
                                     <p className="warn-text">No valid reading was captured.</p>
                                     <div className="btn-row">
                                         <button className="btn btn-primary btn-sm" onClick={() => actions.answerConfirm(true)}>
-                                            Try Again
+                                            Try again
                                         </button>
                                         <button className="btn btn-ghost btn-sm" onClick={() => actions.answerConfirm(false)}>
                                             Skip
@@ -263,37 +289,41 @@ export default function DashboardScreen({ state, actions }: Props) {
                         </div>
                     )}
 
-                    <button type="button" className={`vitals-row action-row ${resultsReady ? 'enabled' : ''}`} disabled={!resultsReady}>
-                        <span className="vitals-icon v-results">
-                            <IconDocument />
-                        </span>
-                        <span className="vitals-label">Show all data + BMI result</span>
-                        <span className="vitals-chevron">
-                            <IconChevronRight />
-                        </span>
-                    </button>
+                    <div className="vitals-actions">
+                        <button
+                            type="button"
+                            className={`action-row results-row-btn ${resultsReady ? 'enabled' : ''}`}
+                            disabled={!resultsReady}
+                        >
+                            <span className="vitals-icon v-results">
+                                <IconDocument />
+                            </span>
+                            <span className="vitals-label">View all data and BMI</span>
+                            <span className="vitals-chevron">
+                                <IconChevronRight />
+                            </span>
+                        </button>
 
-                    <button
-                        type="button"
-                        className="vitals-row action-row end-row"
-                        disabled={promptKind !== 'finish'}
-                        onClick={actions.finish}
-                    >
-                        <span className="vitals-icon v-end">
-                            <IconPower />
-                        </span>
-                        <span className="vitals-label">END</span>
-                        <span className="vitals-chevron">
-                            <IconChevronRight />
-                        </span>
-                    </button>
-                </div>
+                        <button
+                            type="button"
+                            className="action-row end-row"
+                            disabled={promptKind !== 'finish'}
+                            onClick={actions.finish}
+                        >
+                            <span className="vitals-icon v-end">
+                                <IconPower />
+                            </span>
+                            <span className="vitals-label">End session</span>
+                            <span className="vitals-chevron">
+                                <IconChevronRight />
+                            </span>
+                        </button>
+                    </div>
+                </section>
 
-                {/* ---------- Brand panel ---------- */}
-                <div className="brand-panel">
-                    <img src={logo} alt="VitaScan" className="brand-logo" />
-                    <h2 className="brand-title">VitaScan</h2>
-                    <p className="brand-subtitle">Vital Signs &amp; BMI Kiosk</p>
+                {/* ---------- Guide panel ---------- */}
+                <aside className="brand-panel">
+                    <p className="brand-hint">Stand still and follow the prompts. Each measurement takes a few seconds.</p>
                     <div className="brand-figure">
                         <div className="scan-ring" />
                         <svg viewBox="0 0 120 220" className="figure-svg">
@@ -302,7 +332,7 @@ export default function DashboardScreen({ state, actions }: Props) {
                         </svg>
                         <span className="figure-pulse" />
                     </div>
-                </div>
+                </aside>
             </div>
 
             <LoginModal open={isLoginOpen} onClose={() => setIsLoginOpen(false)} onLogin={handleLogin} />

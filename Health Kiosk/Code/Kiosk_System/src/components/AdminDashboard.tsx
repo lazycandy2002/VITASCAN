@@ -158,8 +158,7 @@ export default function AdminDashboard({ onClose, onLogout }: Props) {
                 <button type="button" className="login-close" onClick={onClose} aria-label="Close">
                     ✕
                 </button>
-
-                <h2 className="login-title" style={{ alignSelf: 'flex-start' }}>
+                <h2 className="login-title" style={{ alignSelf: 'flex-start', color: '#000' }}>
                     Patient Records
                 </h2>
                 <p className="login-subtitle" style={{ alignSelf: 'flex-start', textAlign: 'left' }}>
