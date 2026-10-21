@@ -288,10 +288,12 @@ export default function DashboardScreen({ state, actions }: Props) {
                             value={genderValue}
                             onChange={(e) => {
                                 const value = e.target.value
-                                setGenderValue(value)
 
                                 if (value === 'M' || value === 'F') {
+                                    setGenderValue(value)
                                     actions.submitGender(value)
+                                } else {
+                                    setGenderValue('')
                                 }
                             }}
                         >

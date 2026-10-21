@@ -3,213 +3,184 @@ export type SerialLineHandler = (line: string) => void
 export type SerialStatusHandler = (connected: boolean) => void
 
 export class KioskSerial {
-  private port: SerialPort | null = null
-  private textReader: ReadableStreamDefaultReader<string> | null = null
-  private closed = true
-  private connecting = false
+    private port: SerialPort | null = null
+    private reader: ReadableStreamDefaultReader<string> | null = null
+    private closed = true
+    private connecting = false
+    private readTask: Promise<void> | null = null
 
-  private lineHandlers = new Set<SerialLineHandler>()
-  private statusHandlers = new Set<SerialStatusHandler>()
+    private lineHandlers = new Set<SerialLineHandler>()
+    private statusHandlers = new Set<SerialStatusHandler>()
 
-  get isSupported(): boolean {
-    return typeof navigator !== 'undefined' && 'serial' in navigator
-  }
-
-  get isConnected(): boolean {
-    return this.port !== null && !this.closed
-  }
-
-  // Subscribe to incoming Arduino text lines.
-  onLine(handler: SerialLineHandler): () => void {
-    this.lineHandlers.add(handler)
-
-    return () => {
-      this.lineHandlers.delete(handler)
-    }
-  }
-
-  // Subscribe to connection status changes.
-  onStatus(handler: SerialStatusHandler): () => void {
-    this.statusHandlers.add(handler)
-
-    return () => {
-      this.statusHandlers.delete(handler)
-    }
-  }
-
-  private notifyStatus(connected: boolean): void {
-    this.statusHandlers.forEach((handler) => {
-      try {
-        handler(connected)
-      } catch (error) {
-        console.error('Serial status handler error:', error)
-      }
-    })
-  }
-
-  // Connect to the Arduino Mega.
-  async connect(baudRate = 9600): Promise<void> {
-    if (!this.isSupported) {
-      throw new Error(
-        'Web Serial is not supported in this browser. Use Chrome or Edge on desktop.'
-      )
+    get isConnected() {
+        return this.port !== null && !this.closed
     }
 
-    if (this.connecting) {
-      throw new Error('A connection attempt is already in progress.')
+    onLine(handler: SerialLineHandler) {
+        this.lineHandlers.add(handler)
+        return () => this.lineHandlers.delete(handler)
     }
 
-    if (this.isConnected) {
-      return
+    onStatus(handler: SerialStatusHandler) {
+        this.statusHandlers.add(handler)
+        return () => this.statusHandlers.delete(handler)
     }
 
-    this.connecting = true
-
-    try {
-      const port = await navigator.serial.requestPort()
-
-      await port.open({ baudRate })
-
-      this.port = port
-      this.closed = false
-
-      this.notifyStatus(true)
-
-      // Start reading without blocking the connection button.
-      void this.readLoop(port)
-    } finally {
-      this.connecting = false
-    }
-  }
-
-  // Disconnect from the Arduino.
-  async disconnect(): Promise<void> {
-    const port = this.port
-
-    this.closed = true
-    this.port = null
-
-    try {
-      await this.textReader?.cancel()
-    } catch {
-      // Reader may already be closed.
-    }
-
-    this.textReader = null
-
-    try {
-      await port?.close()
-    } catch {
-      // Port may already be closed.
-    }
-
-    this.notifyStatus(false)
-  }
-
-  // Send one newline-terminated command to the Arduino.
-  async sendLine(text: string): Promise<void> {
-    const port = this.port
-
-    if (!port?.writable || this.closed) {
-      throw new Error('Arduino is not connected.')
-    }
-
-    const writer = port.writable.getWriter()
-
-    try {
-      await writer.write(
-        new TextEncoder().encode(`${text}\n`)
-      )
-    } finally {
-      writer.releaseLock()
-    }
-  }
-
-  // Continuously read incoming text and split it into lines.
-  private async readLoop(port: SerialPort): Promise<void> {
-    if (!port.readable) {
-      this.closed = true
-      this.port = null
-      this.notifyStatus(false)
-      return
-    }
-
-    const decoderStream = new TextDecoderStream()
-
-    const streamClosed = port.readable
-      .pipeTo(decoderStream.writable as WritableStream<Uint8Array<ArrayBufferLike>>
-      )
-      .catch(() => {
-        // Expected when the port closes or disconnects.
-      })
-
-    const reader = decoderStream.readable.getReader()
-    this.textReader = reader
-
-    let buffer = ''
-
-    try {
-      while (!this.closed && this.port === port) {
-        const { value, done } = await reader.read()
-
-        if (done) break
-        if (!value) continue
-
-        buffer += value
-
-        let index: number
-
-        while ((index = buffer.indexOf('\n')) >= 0) {
-          const line = buffer
-            .slice(0, index)
-            .replace(/\r$/, '')
-
-          buffer = buffer.slice(index + 1)
-
-          if (line.length === 0) continue
-
-          this.lineHandlers.forEach((handler) => {
-            try {
-              handler(line)
-            } catch (error) {
-              console.error('Serial line handler error:', error)
-            }
-          })
+    private emitStatus(connected: boolean) {
+        for (const handler of this.statusHandlers) {
+            handler(connected)
         }
-      }
-    } catch (error) {
-      if (!this.closed) {
-        console.error('Serial read error:', error)
-      }
-    } finally {
-      try {
-        reader.releaseLock()
-      } catch {
-        // Reader may already be released.
-      }
+    }
 
-      await streamClosed
+    private emitLine(line: string) {
+        const value = line.trim()
+        if (!value) return
 
-      if (this.textReader === reader) {
-        this.textReader = null
-      }
+        console.log('[Arduino]', value)
 
-      // Mark disconnected only if this was the active port
-      // and the read loop ended unexpectedly.
-      if (!this.closed && this.port === port) {
-        this.closed = true
-        this.port = null
-        this.notifyStatus(false)
+        for (const handler of this.lineHandlers) {
+            handler(value)
+        }
+    }
+
+    async connect() {
+        if (this.connecting || this.isConnected) return
+
+        if (!('serial' in navigator)) {
+            throw new Error(
+                'Web Serial is not supported. Use Chrome or Edge over localhost or HTTPS.',
+            )
+        }
+
+        this.connecting = true
 
         try {
-          await port.close()
-        } catch {
-          // Port may already be closed.
+            const port = await navigator.serial.requestPort()
+            await port.open({ baudRate: 9600 })
+
+            if (!port.readable || !port.writable) {
+                await port.close()
+                throw new Error('The selected serial port is unavailable.')
+            }
+
+            this.port = port
+            this.closed = false
+            this.emitStatus(true)
+
+            this.readTask = this.readLoop(port)
+        } finally {
+            this.connecting = false
         }
-      }
     }
-  }
+
+    private async readLoop(port: SerialPort) {
+        const decoder = new TextDecoderStream()
+        const closedPromise = port.readable!
+            .pipeTo(decoder.writable as WritableStream<Uint8Array>)
+            .catch((error: unknown) => {
+                if (!this.closed) {
+                    console.error('Serial stream error:', error)
+                }
+            })
+
+        const reader = decoder.readable.getReader()
+        this.reader = reader
+
+        let buffer = ''
+
+        try {
+            while (!this.closed) {
+                const { value, done } = await reader.read()
+
+                if (done) break
+                if (value === undefined) continue
+
+                buffer += value
+
+                let newlineIndex = buffer.indexOf('\n')
+
+                while (newlineIndex >= 0) {
+                    const line = buffer.slice(0, newlineIndex)
+                    buffer = buffer.slice(newlineIndex + 1)
+
+                    this.emitLine(line.replace(/\r/g, ''))
+                    newlineIndex = buffer.indexOf('\n')
+                }
+
+                if (buffer.length > 8192) {
+                    buffer = buffer.slice(-4096)
+                }
+            }
+        } catch (error) {
+            if (!this.closed) {
+                console.error('Serial read failed:', error)
+            }
+        } finally {
+            if (this.reader === reader) {
+                this.reader = null
+            }
+
+            try {
+                reader.releaseLock()
+            } catch {
+                // Reader may already have been released.
+            }
+
+            await closedPromise
+
+            if (this.port === port) {
+                this.port = null
+                this.closed = true
+                this.emitStatus(false)
+            }
+        }
+    }
+
+    async sendLine(command: string) {
+        if (!this.port || this.closed || !this.port.writable) {
+            throw new Error('Arduino is not connected.')
+        }
+
+        const writer = this.port.writable.getWriter()
+
+        try {
+            const encoder = new TextEncoder()
+            await writer.write(encoder.encode(`${command}\n`))
+        } finally {
+            writer.releaseLock()
+        }
+    }
+
+    async disconnect() {
+        const port = this.port
+
+        if (!port) return
+
+        this.closed = true
+
+        try {
+            await this.reader?.cancel()
+        } catch {
+            // The read loop may already have stopped.
+        }
+
+        try {
+            await this.readTask
+        } catch {
+            // Connection is already closing.
+        }
+
+        try {
+            await port.close()
+        } catch (error) {
+            console.warn('Serial port close:', error)
+        }
+
+        this.port = null
+        this.reader = null
+        this.readTask = null
+        this.emitStatus(false)
+    }
 }
 
-// One shared serial instance for the whole application.
 export const kioskSerial = new KioskSerial()

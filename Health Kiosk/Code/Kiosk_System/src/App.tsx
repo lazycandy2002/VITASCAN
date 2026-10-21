@@ -8,7 +8,7 @@ function App() {
 
   return (
     <div className="kiosk">
-      {state.screen === 'splash' && <SplashScreen onNext={actions.enterIdentity} />}
+      {state.screen === 'splash' && <SplashScreen onNext={() => undefined} />}
       {(state.screen === 'identity' ||
         state.screen === 'sensor' ||
         state.screen === 'results') && (
