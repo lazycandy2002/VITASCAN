@@ -1,6 +1,8 @@
-
 export type SerialLineHandler = (line: string) => void
 export type SerialStatusHandler = (connected: boolean) => void
+
+// Must match Serial.begin(115200) in the Arduino sketch
+const BAUD_RATE = 115200
 
 export class KioskSerial {
     private port: SerialPort | null = null
@@ -56,7 +58,7 @@ export class KioskSerial {
 
         try {
             const port = await navigator.serial.requestPort()
-            await port.open({ baudRate: 9600 })
+            await port.open({ baudRate: BAUD_RATE })
 
             if (!port.readable || !port.writable) {
                 await port.close()

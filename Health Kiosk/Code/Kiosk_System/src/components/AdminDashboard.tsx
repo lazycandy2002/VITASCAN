@@ -1,71 +1,16 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { IconCheck } from './icons'
+import {
+    loadRecords,
+    saveRecords,
+    newId,
+    todayLocal,
+    type PatientRecord,
+} from '../data/recordsStore'
 
-export interface PatientRecord {
-    id: string
-    name: string
-    age: string
-    gender: 'M' | 'F'
-    temperature: string
-    pulse: string
-    oxygen: string
-    height: string
-    weight: string
-    date: string
-}
+export type { PatientRecord }
 
-const SAMPLE_DATA: PatientRecord[] = [
-    {
-        id: crypto.randomUUID(),
-        name: 'Juan Dela Cruz',
-        age: '34',
-        gender: 'M',
-        temperature: '36.7',
-        pulse: '78',
-        oxygen: '98',
-        height: '170',
-        weight: '68',
-        date: '2026-09-18',
-    },
-    {
-        id: crypto.randomUUID(),
-        name: 'Maria Santos',
-        age: '27',
-        gender: 'F',
-        temperature: '36.9',
-        pulse: '82',
-        oxygen: '99',
-        height: '160',
-        weight: '55',
-        date: '2026-09-19',
-    },
-    {
-        id: crypto.randomUUID(),
-        name: 'Pedro Reyes',
-        age: '45',
-        gender: 'M',
-        temperature: '37.2',
-        pulse: '90',
-        oxygen: '96',
-        height: '165',
-        weight: '80',
-        date: '2026-09-20',
-    },
-    {
-        id: crypto.randomUUID(),
-        name: 'Ana Villanueva',
-        age: '19',
-        gender: 'F',
-        temperature: '36.5',
-        pulse: '75',
-        oxygen: '99',
-        height: '158',
-        weight: '50',
-        date: '2026-09-21',
-    },
-]
-
-const emptyForm: Omit<PatientRecord, 'id'> = {
+const makeEmptyForm = (): Omit<PatientRecord, 'id'> => ({
     name: '',
     age: '',
     gender: 'M',
@@ -74,8 +19,8 @@ const emptyForm: Omit<PatientRecord, 'id'> = {
     oxygen: '',
     height: '',
     weight: '',
-    date: new Date().toISOString().slice(0, 10),
-}
+    date: todayLocal(),
+})
 
 interface Props {
     onClose: () => void
@@ -100,14 +45,77 @@ function computeBMI(heightCm: string, weightKg: string): { value: string; catego
     return { value: bmi.toFixed(1), category }
 }
 
+const withUnit = (v: string, unit: string) => (v ? `${v}${unit}` : '—')
+
+// Escape one CSV cell (and block spreadsheet formula injection)
+function csvCell(value: string): string {
+    let v = value ?? ''
+    if (/^[=+\-@]/.test(v)) v = `'${v}`
+    return `"${v.replace(/"/g, '""')}"`
+}
+
+function downloadCsv(records: PatientRecord[]) {
+    const header = [
+        'Name',
+        'Age',
+        'Gender',
+        'Temperature (C)',
+        'Pulse (bpm)',
+        'Oxygen (%)',
+        'Height (cm)',
+        'Weight (kg)',
+        'BMI',
+        'BMI Category',
+        'Date',
+    ]
+
+    const lines = records.map((r) => {
+        const bmi = computeBMI(r.height, r.weight)
+        return [
+            r.name,
+            r.age,
+            r.gender === 'M' ? 'Male' : 'Female',
+            r.temperature,
+            r.pulse,
+            r.oxygen,
+            r.height,
+            r.weight,
+            bmi ? bmi.value : '',
+            bmi ? bmi.category : '',
+            r.date,
+        ]
+            .map(csvCell)
+            .join(',')
+    })
+
+    // BOM so Excel reads the file as UTF-8
+    const csv = '\uFEFF' + [header.map(csvCell).join(','), ...lines].join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `vitascan-records-${todayLocal()}.csv`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+}
+
 export default function AdminDashboard({ onClose, onLogout }: Props) {
-    const [records, setRecords] = useState<PatientRecord[]>(SAMPLE_DATA)
-    const [form, setForm] = useState<Omit<PatientRecord, 'id'>>(emptyForm)
+    const [records, setRecords] = useState<PatientRecord[]>(loadRecords)
+    const [form, setForm] = useState<Omit<PatientRecord, 'id'>>(makeEmptyForm)
     const [editingId, setEditingId] = useState<string | null>(null)
     const [showForm, setShowForm] = useState(false)
+    const [query, setQuery] = useState('')
+
+    // Update the screen and save in one step
+    const commit = (next: PatientRecord[]) => {
+        setRecords(next)
+        saveRecords(next)
+    }
 
     const startCreate = () => {
-        setForm(emptyForm)
+        setForm(makeEmptyForm())
         setEditingId(null)
         setShowForm(true)
     }
@@ -121,7 +129,7 @@ export default function AdminDashboard({ onClose, onLogout }: Props) {
 
     const remove = (id: string) => {
         if (confirm('Delete this record?')) {
-            setRecords((prev) => prev.filter((r) => r.id !== id))
+            commit(records.filter((r) => r.id !== id))
         }
     }
 
@@ -130,11 +138,9 @@ export default function AdminDashboard({ onClose, onLogout }: Props) {
         if (!form.name.trim()) return
 
         if (editingId) {
-            setRecords((prev) =>
-                prev.map((r) => (r.id === editingId ? { ...form, id: editingId } : r))
-            )
+            commit(records.map((r) => (r.id === editingId ? { ...form, id: editingId } : r)))
         } else {
-            setRecords((prev) => [...prev, { ...form, id: crypto.randomUUID() }])
+            commit([...records, { ...form, id: newId() }])
         }
         setShowForm(false)
         setEditingId(null)
@@ -146,57 +152,77 @@ export default function AdminDashboard({ onClose, onLogout }: Props) {
             setForm((prev) => ({ ...prev, [key]: e.target.value })),
     })
 
-    const cellStyle: React.CSSProperties = {
-        flex: '0 0 100px',
-        padding: '0 6px',
-        whiteSpace: 'nowrap',
-    }
+    // newest first, filtered by name
+    const rows = useMemo(() => {
+        const q = query.trim().toLowerCase()
+        return [...records]
+            .reverse()
+            .filter((r) => !q || r.name.toLowerCase().includes(q))
+    }, [records, query])
 
     return (
-        <div className="login-overlay" role="dialog" aria-modal="true">
-            <div className="login-card" style={{ width: 'min(1400px, 96vw)', maxHeight: '90vh', overflowY: 'auto' }}>
-                <button type="button" className="login-close" onClick={onClose} aria-label="Close">
-                    ✕
-                </button>
-                <h2 className="login-title" style={{ alignSelf: 'flex-start', color: '#000' }}>
-                    Patient Records
-                </h2>
-                <p className="login-subtitle" style={{ alignSelf: 'flex-start', textAlign: 'left' }}>
-                    Manage stored check-up records — full vitals + BMI
-                </p>
-
-                <div className="btn-row" style={{ alignSelf: 'flex-end', marginBottom: 12, gap: 8 }}>
-                    <button type="button" className="btn btn-primary btn-sm" onClick={startCreate}>
-                        + Add Record
+        <div className="admin-overlay" role="dialog" aria-modal="true" aria-label="Patient records">
+            <div className="admin-modal">
+                <header className="admin-head">
+                    <div>
+                        <h2 className="admin-title">Patient records</h2>
+                        <p className="admin-sub">
+                            {records.length} {records.length === 1 ? 'record' : 'records'} saved on this kiosk
+                        </p>
+                    </div>
+                    <button type="button" className="admin-close" onClick={onClose} aria-label="Close">
+                        ×
                     </button>
-                    {onLogout && (
+                </header>
+
+                <div className="admin-toolbar">
+                    <input
+                        className="field-input admin-search"
+                        type="search"
+                        placeholder="Search by name"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                    />
+                    <div className="btn-row">
+                        <button type="button" className="btn btn-primary btn-sm" onClick={startCreate}>
+                            + Add record
+                        </button>
                         <button
                             type="button"
                             className="btn btn-ghost btn-sm"
-                            onClick={() => {
-                                onLogout()
-                                onClose()
-                            }}
+                            disabled={rows.length === 0}
+                            onClick={() => downloadCsv(rows)}
                         >
-                            Logout
+                            Download CSV
                         </button>
-                    )}
+                        {onLogout && (
+                            <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => {
+                                    onLogout()
+                                    onClose()
+                                }}
+                            >
+                                Logout
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {showForm && (
-                    <form
-                        onSubmit={save}
-                        className="prompt-card"
-                        style={{ width: '100%', marginBottom: 16, alignItems: 'stretch' }}
-                    >
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <form onSubmit={save} className="admin-form">
+                        <h3 className="admin-form-title">
+                            {editingId ? 'Edit record' : 'New record'}
+                        </h3>
+                        <div className="admin-form-grid">
                             <div className="field-row">
                                 <label className="field-label">Name</label>
                                 <input className="field-input" {...field('name')} required />
                             </div>
                             <div className="field-row">
                                 <label className="field-label">Age</label>
-                                <input className="field-input" {...field('age')} />
+                                <input className="field-input" inputMode="numeric" {...field('age')} />
                             </div>
                             <div className="field-row">
                                 <label className="field-label">Gender</label>
@@ -206,32 +232,32 @@ export default function AdminDashboard({ onClose, onLogout }: Props) {
                                 </select>
                             </div>
                             <div className="field-row">
-                                <label className="field-label">Date</label>
-                                <input className="field-input" type="date" {...field('date')} />
-                            </div>
-                            <div className="field-row">
                                 <label className="field-label">Temperature (°C)</label>
-                                <input className="field-input" {...field('temperature')} />
+                                <input className="field-input" inputMode="decimal" {...field('temperature')} />
                             </div>
                             <div className="field-row">
-                                <label className="field-label">Pulse Rate (bpm)</label>
-                                <input className="field-input" {...field('pulse')} />
+                                <label className="field-label">Pulse rate (bpm)</label>
+                                <input className="field-input" inputMode="numeric" {...field('pulse')} />
                             </div>
                             <div className="field-row">
                                 <label className="field-label">Oxygen (%)</label>
-                                <input className="field-input" {...field('oxygen')} />
+                                <input className="field-input" inputMode="numeric" {...field('oxygen')} />
                             </div>
                             <div className="field-row">
                                 <label className="field-label">Height (cm)</label>
-                                <input className="field-input" {...field('height')} />
+                                <input className="field-input" inputMode="decimal" {...field('height')} />
                             </div>
                             <div className="field-row">
                                 <label className="field-label">Weight (kg)</label>
-                                <input className="field-input" {...field('weight')} />
+                                <input className="field-input" inputMode="decimal" {...field('weight')} />
+                            </div>
+                            <div className="field-row">
+                                <label className="field-label">Date</label>
+                                <input className="field-input" type="date" {...field('date')} />
                             </div>
                         </div>
 
-                        <div className="btn-row login-btn-row" style={{ marginTop: 8 }}>
+                        <div className="btn-row admin-form-actions">
                             <button
                                 type="button"
                                 className="btn btn-ghost btn-sm"
@@ -240,89 +266,88 @@ export default function AdminDashboard({ onClose, onLogout }: Props) {
                                 Cancel
                             </button>
                             <button type="submit" className="btn btn-primary btn-sm">
-                                <IconCheck className="icon-sm" /> {editingId ? 'Save Changes' : 'Add Record'}
+                                <IconCheck className="icon-sm" />
+                                {editingId ? 'Save changes' : 'Add record'}
                             </button>
                         </div>
                     </form>
                 )}
 
-                <div style={{ width: '100%', overflowX: 'auto' }}>
-                    <div className="results-grid" style={{ width: '100%', minWidth: 1000 }}>
-                        <div className="results-row" style={{ fontWeight: 700, color: 'var(--vs-text-dim)' }}>
-                            <span style={{ ...cellStyle, flex: '0 0 150px' }}>Name</span>
-                            <span style={cellStyle}>Age/Gender</span>
-                            <span style={cellStyle}>Temperature</span>
-                            <span style={cellStyle}>Pulse Rate</span>
-                            <span style={cellStyle}>Oxygen</span>
-                            <span style={cellStyle}>Height</span>
-                            <span style={cellStyle}>Weight</span>
-                            <span style={{ ...cellStyle, flex: '0 0 130px' }}>BMI Result</span>
-                            <span style={cellStyle}>Date</span>
-                            <span style={{ ...cellStyle, flex: '0 0 140px' }}>Actions</span>
-                        </div>
+                <div className="admin-table-wrap">
+                    <table className="admin-table">
+                        <thead>
+                            <tr>
+                                <th className="col-name">Name</th>
+                                <th>Age / Sex</th>
+                                <th className="num">Temp</th>
+                                <th className="num">Pulse</th>
+                                <th className="num">Oxygen</th>
+                                <th className="num">Height</th>
+                                <th className="num">Weight</th>
+                                <th>BMI</th>
+                                <th>Date</th>
+                                <th className="col-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rows.length === 0 && (
+                                <tr>
+                                    <td colSpan={10} className="admin-empty">
+                                        {records.length === 0
+                                            ? 'No records yet. Completed check-ups are saved here automatically.'
+                                            : 'No records match your search.'}
+                                    </td>
+                                </tr>
+                            )}
 
-                        {records.length === 0 && (
-                            <div className="results-row">
-                                <span className="results-label">No records yet.</span>
-                            </div>
-                        )}
-
-                        {records.map((r) => {
-                            const bmi = computeBMI(r.height, r.weight)
-                            return (
-                                <div className="results-row" key={r.id}>
-                                    <span style={{ ...cellStyle, flex: '0 0 150px', fontWeight: 600 }}>{r.name}</span>
-                                    <span style={cellStyle}>
-                                        {r.age} / {r.gender}
-                                    </span>
-                                    <span style={cellStyle}>{r.temperature}°C</span>
-                                    <span style={cellStyle}>{r.pulse} bpm</span>
-                                    <span style={cellStyle}>{r.oxygen}%</span>
-                                    <span style={cellStyle}>{r.height} cm</span>
-                                    <span style={cellStyle}>{r.weight} kg</span>
-                                    <span style={{ ...cellStyle, flex: '0 0 130px' }}>
-                                        {bmi ? (
-                                            <>
-                                                <strong>{bmi.value}</strong>{' '}
-                                                <span
-                                                    className={
-                                                        bmi.category === 'Normal'
-                                                            ? 'ok-text'
-                                                            : bmi.category === 'Underweight'
-                                                                ? 'warn-text'
-                                                                : 'error-text'
-                                                    }
-                                                    style={{ fontSize: 12 }}
-                                                >
-                                                    ({bmi.category})
+                            {rows.map((r) => {
+                                const bmi = computeBMI(r.height, r.weight)
+                                const cat = bmi ? bmi.category.toLowerCase() : ''
+                                return (
+                                    <tr key={r.id}>
+                                        <td className="col-name">{r.name}</td>
+                                        <td>
+                                            {r.age || '—'} / {r.gender}
+                                        </td>
+                                        <td className="num">{withUnit(r.temperature, ' °C')}</td>
+                                        <td className="num">{withUnit(r.pulse, ' bpm')}</td>
+                                        <td className="num">{withUnit(r.oxygen, ' %')}</td>
+                                        <td className="num">{withUnit(r.height, ' cm')}</td>
+                                        <td className="num">{withUnit(r.weight, ' kg')}</td>
+                                        <td>
+                                            {bmi ? (
+                                                <span className={`bmi-badge bmi-b-${cat}`}>
+                                                    <strong>{bmi.value}</strong>
+                                                    {bmi.category}
                                                 </span>
-                                            </>
-                                        ) : (
-                                            <span className="results-label">—</span>
-                                        )}
-                                    </span>
-                                    <span style={cellStyle}>{r.date}</span>
-                                    <span style={{ ...cellStyle, flex: '0 0 140px', display: 'flex', gap: 8 }}>
-                                        <button
-                                            type="button"
-                                            className="btn btn-ghost btn-sm"
-                                            onClick={() => startEdit(r)}
-                                        >
-                                            Edit
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="btn btn-ghost btn-sm"
-                                            style={{ color: 'var(--vs-error)', borderColor: 'var(--vs-error)' }}
-                                            onClick={() => remove(r.id)}
-                                        >
-                                            Delete
-                                        </button>
-                                    </span>
-                                </div>
-                            )
-                        })}
-                    </div>
+                                            ) : (
+                                                '—'
+                                            )}
+                                        </td>
+                                        <td className="nowrap">{r.date}</td>
+                                        <td className="col-actions">
+                                            <div className="btn-row">
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-ghost btn-sm"
+                                                    onClick={() => startEdit(r)}
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-ghost btn-sm btn-danger"
+                                                    onClick={() => remove(r.id)}
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )
+                            })}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>

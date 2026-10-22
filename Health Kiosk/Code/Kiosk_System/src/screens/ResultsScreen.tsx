@@ -19,30 +19,30 @@ const ROWS: Array<[string, string]> = [
 ]
 
 export default function ResultsScreen({ state, actions }: Props) {
-  const { results, promptKind } = state
+  const { results } = state
 
   return (
     <div className="screen results-screen">
       <h2 className="screen-title">Your Results</h2>
 
       <div className="results-grid">
-        {ROWS.map(([key, label]) => (
-          <div key={key} className="results-row">
-            <span className="results-label">{label}</span>
-            <span className={`results-value ${results[key] === 'INVALID' ? 'invalid' : ''}`}>
-              {results[key] ?? '—'}
-            </span>
-          </div>
-        ))}
+        {ROWS.map(([key, label]) => {
+          const resultValue = results[key as keyof typeof results] as string | number | null | undefined
+
+          return (
+            <div key={key} className="results-row">
+              <span className="results-label">{label}</span>
+              <span className={`results-value ${resultValue === 'INVALID' ? 'invalid' : ''}`}>
+                {resultValue ?? '—'}
+              </span>
+            </div>
+          )
+        })}
       </div>
 
-      {promptKind === 'finish' ? (
-        <button className="btn btn-primary btn-xl" onClick={actions.finish}>
-          Finish
-        </button>
-      ) : (
-        <p className="status-line">Finalizing…</p>
-      )}
+      <button className="btn btn-primary btn-xl" onClick={actions.finish}>
+        Finish
+      </button>
     </div>
   )
 }

@@ -1,0 +1,906 @@
+/* =========================================================
+   VitaScan kiosk dashboard: full redesign
+   REPLACE the whole contents of dashboard-extras.css with this file.
+   Delete the second "two-column" CSS file and the duplicated block;
+   nothing else is needed. Everything is scoped under .dashboard.
+   ========================================================= */
+
+/* Let the page scroll (the old layout cut off the bottom) */
+html,
+body,
+#root {
+    height: auto !important;
+    min-height: 100%;
+    overflow-y: auto !important;
+}
+
+.dashboard {
+    --ink: #14301f;
+    --ink-soft: #5b6f62;
+    --paper: #f3f9f5;
+    --card: #ffffff;
+    --line: #d8e8dd;
+    --brand: #16a34a;
+    --brand-dark: #15803d;
+    --brand-tint: #e7f6ec;
+    --warn: #b45309;
+    --warn-tint: #fff4e0;
+    --bad: #c62828;
+    --radius: 16px;
+
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+    font-size: 1rem;
+    line-height: 1.4;
+}
+
+.dashboard *,
+.dashboard *::before,
+.dashboard *::after {
+    box-sizing: border-box;
+}
+
+/* ---------- Top bar ---------- */
+.dashboard .dashboard-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 14px 28px;
+    background: #fff;
+    color: var(--ink);
+    border-bottom: 3px solid var(--brand);
+}
+
+.dashboard .topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.dashboard .topbar-logo {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    object-fit: cover;
+    background: #fff;
+}
+
+.dashboard .topbar-title {
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.dashboard .topbar-sub {
+    font-size: 0.9rem;
+    color: var(--ink-soft);
+}
+
+.dashboard .topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.dashboard .login-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 18px;
+    border: 1.5px solid var(--brand);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--brand-dark);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.dashboard .login-btn:hover {
+    background: var(--brand-tint);
+}
+
+/* ---------- Body layout ---------- */
+.dashboard .dashboard-body {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 360px minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+    width: 100%;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px 28px 40px;
+}
+
+.dashboard .identity-card,
+.dashboard .vitals-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 24px;
+}
+
+.dashboard .card-heading {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+
+/* ---------- Patient card ---------- */
+.dashboard .identity-card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    position: sticky;
+    top: 16px;
+}
+
+.dashboard .identity-avatar {
+    display: grid;
+    place-items: center;
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 4px;
+    border-radius: 50%;
+    background: var(--brand-tint);
+    color: var(--brand-dark);
+}
+
+.dashboard .identity-avatar svg {
+    width: 36px;
+    height: 36px;
+}
+
+.dashboard .field-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.dashboard .field-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+}
+
+.dashboard .field-input {
+    width: 100%;
+    min-height: 52px;
+    padding: 0 14px;
+    border: 1.5px solid var(--line);
+    border-radius: 12px;
+    background: #fff;
+    color: var(--ink);
+    font: inherit;
+    font-size: 1.1rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.dashboard .field-input:focus {
+    outline: none;
+    border-color: var(--brand);
+    box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.2);
+}
+
+.dashboard .field-input:disabled {
+    background: var(--paper);
+    color: var(--ink-soft);
+    cursor: not-allowed;
+}
+
+.dashboard .icon-sm {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+/* ---------- Buttons ---------- */
+.dashboard .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 52px;
+    padding: 0 22px;
+    border: 1.5px solid transparent;
+    border-radius: 12px;
+    font: inherit;
+    font-size: 1.05rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.05s;
+}
+
+.dashboard .btn:active:not(:disabled) {
+    transform: scale(0.98);
+}
+
+.dashboard .btn:focus-visible,
+.dashboard .login-btn:focus-visible {
+    outline: 3px solid #86efac;
+    outline-offset: 2px;
+}
+
+.dashboard .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.dashboard .btn-primary {
+    background: var(--brand);
+    color: #fff;
+}
+
+.dashboard .btn-primary:hover:not(:disabled) {
+    background: var(--brand-dark);
+}
+
+.dashboard .btn-ghost {
+    background: #fff;
+    border-color: var(--line);
+    color: var(--ink);
+}
+
+.dashboard .btn-ghost:hover:not(:disabled) {
+    border-color: var(--brand);
+    color: var(--brand-dark);
+}
+
+.dashboard .btn-sm {
+    min-height: 46px;
+    padding: 0 18px;
+    font-size: 1rem;
+}
+
+.dashboard .btn-start {
+    width: 100%;
+    min-height: 60px;
+    font-size: 1.15rem;
+}
+
+.dashboard .identity-card > .btn-sm {
+    width: 100%;
+}
+
+.dashboard .btn-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+/* ---------- Messages ---------- */
+.dashboard .status-line {
+    margin: 0;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--paper);
+    color: var(--ink-soft);
+    font-size: 0.98rem;
+}
+
+.dashboard .warn-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.dashboard .warn-text {
+    margin: 0;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--warn-tint);
+    color: var(--warn);
+    font-weight: 600;
+}
+
+.dashboard .ok-text {
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--brand-dark);
+}
+
+/* ---------- Vitals card ---------- */
+.dashboard .vitals-card {
+    min-width: 0;
+}
+
+.dashboard .vitals-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.dashboard .vitals-count {
+    font-size: 0.98rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+}
+
+.dashboard .vitals-progress {
+    height: 8px;
+    margin: 12px 0 20px;
+    border-radius: 999px;
+    background: var(--line);
+    overflow: hidden;
+}
+
+.dashboard .vitals-progress > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--brand);
+    transition: width 0.3s ease;
+}
+
+.dashboard .vitals-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* One accent colour per vital */
+.dashboard .v-temp   { --accent: #e0662b; }
+.dashboard .v-pulse  { --accent: #d6336c; }
+.dashboard .v-oxygen { --accent: #2f7de1; }
+.dashboard .v-height { --accent: #7a52d1; }
+.dashboard .v-weight { --accent: #0d9488; }
+
+.dashboard .vitals-row {
+    --accent: var(--brand);
+    position: relative;
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 16px;
+    min-height: 68px;
+    padding: 8px 18px 8px 20px;
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    background: #fff;
+    overflow: hidden;
+}
+
+/* colour edge on the left */
+.dashboard .vitals-row::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 5px;
+    background: var(--accent);
+    opacity: 0.35;
+}
+
+.dashboard .vitals-icon {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--accent) 12%, #fff);
+    color: var(--accent);
+}
+
+.dashboard .vitals-icon svg {
+    width: 24px;
+    height: 24px;
+}
+
+.dashboard .vitals-label {
+    font-size: 1.15rem;
+    font-weight: 600;
+}
+
+.dashboard .vitals-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.dashboard .vitals-status {
+    min-width: 104px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: var(--paper);
+    color: var(--ink-soft);
+    font-size: 0.88rem;
+    font-weight: 700;
+    text-align: center;
+}
+
+/* active */
+.dashboard .vitals-row.active {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 6%, #fff);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.dashboard .vitals-row.active::before {
+    opacity: 1;
+}
+
+.dashboard .vitals-row.active .vitals-status {
+    background: var(--accent);
+    color: #fff;
+}
+
+/* done */
+.dashboard .vitals-row.done::before {
+    opacity: 1;
+}
+
+.dashboard .vitals-row.done .vitals-icon {
+    background: var(--accent);
+    color: #fff;
+}
+
+.dashboard .vitals-row.done .vitals-status {
+    background: var(--brand-tint);
+    color: var(--brand-dark);
+}
+
+/* ---------- Active step + complete panels ---------- */
+/* Pinned to the bottom of the screen so the sensor prompt is
+   always visible, even when the list is taller than the display */
+.dashboard .active-step-panel,
+.dashboard .results-panel {
+    position: sticky;
+    bottom: 16px;
+    z-index: 20;
+    margin-top: 20px;
+    padding: 20px 22px;
+    border-radius: 16px;
+    background: #fff;
+    color: var(--ink);
+    border: 2px solid var(--brand);
+    box-shadow: 0 -4px 0 var(--brand-tint), 0 12px 32px rgba(21, 128, 61, 0.22);
+}
+
+.dashboard .active-step-panel .status-line {
+    background: transparent;
+    padding: 0;
+    color: var(--ink);
+    font-size: 1.3rem;
+    font-weight: 600;
+}
+
+.dashboard .active-step-panel .ok-text {
+    color: var(--brand-dark);
+    font-size: 1.3rem;
+}
+
+.dashboard .active-step-panel .warn-text {
+    color: var(--warn);
+    font-size: 1.2rem;
+}
+
+.dashboard .active-step-panel .btn-ghost,
+.dashboard .results-panel .btn-ghost {
+    background: #fff;
+    border-color: var(--line);
+    color: var(--ink);
+}
+
+.dashboard .active-step-panel .btn-primary,
+.dashboard .results-panel .btn-primary {
+    min-height: 56px;
+    padding: 0 28px;
+}
+
+.dashboard .inline-prompt {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.dashboard .inline-prompt > p {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--ink);
+}
+
+.dashboard .inline-prompt .warn-text {
+    background: transparent;
+    padding: 0;
+}
+
+/* ---------- Results popup ---------- */
+.dashboard .results-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(20, 48, 31, 0.45);
+    backdrop-filter: blur(3px);
+    animation: results-fade 0.2s ease;
+}
+
+.dashboard .results-modal {
+    position: relative;
+    width: min(660px, 100%);
+    max-height: 92vh;
+    overflow-y: auto;
+    padding: 28px;
+    border-radius: 20px;
+    background: #fff;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+    animation: results-pop 0.25s ease;
+}
+
+.dashboard .results-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 40px;
+    height: 40px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 1.6rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.dashboard .results-modal-title {
+    margin: 0 48px 16px 0;
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+
+.dashboard .bmi-hero {
+    --bmi: var(--brand);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 18px;
+    padding: 24px 16px;
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--bmi) 10%, #fff);
+    border: 1.5px solid color-mix(in srgb, var(--bmi) 30%, #fff);
+    text-align: center;
+}
+
+.dashboard .bmi-hero-label {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+}
+
+.dashboard .bmi-hero-value {
+    font-size: 4.5rem;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--bmi);
+    font-variant-numeric: tabular-nums;
+}
+
+.dashboard .bmi-hero-category {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--bmi);
+}
+
+.dashboard .bmi-note {
+    margin-top: 6px;
+    font-size: 0.88rem;
+    color: var(--ink-soft);
+}
+
+.dashboard .bmi-hero.bmi-underweight { --bmi: #1f6feb; }
+.dashboard .bmi-hero.bmi-normal,
+.dashboard .bmi-hero.bmi-normal-weight { --bmi: #16a34a; }
+.dashboard .bmi-hero.bmi-overweight { --bmi: #d97706; }
+.dashboard .bmi-hero.bmi-obese,
+.dashboard .bmi-hero.bmi-obesity { --bmi: #dc2626; }
+
+.dashboard .results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 10px;
+    margin: 0 0 18px;
+}
+
+.dashboard .result-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: var(--paper);
+}
+
+.dashboard .result-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+}
+
+.dashboard .result-value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.dashboard .results-modal-actions {
+    justify-content: flex-end;
+}
+
+@keyframes results-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes results-pop {
+    from { opacity: 0; transform: scale(0.95) translateY(8px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 960px) {
+    .dashboard .dashboard-body {
+        grid-template-columns: 1fr;
+        padding: 16px;
+    }
+
+    .dashboard .identity-card {
+        position: static;
+    }
+}
+
+@media (max-width: 560px) {
+    .dashboard .vitals-row {
+        grid-template-columns: 44px minmax(0, 1fr) auto;
+    }
+
+    .dashboard .vitals-status {
+        grid-column: 2 / -1;
+        justify-self: start;
+        min-width: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dashboard .results-overlay,
+    .dashboard .results-modal,
+    .dashboard .vitals-progress > span {
+        animation: none;
+        transition: none;
+    }
+}
+
+/* =========================================================
+   Admin: patient records table
+   ========================================================= */
+.dashboard .admin-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(20, 48, 31, 0.45);
+    backdrop-filter: blur(3px);
+}
+
+.dashboard .admin-modal {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: min(1280px, 100%);
+    max-height: 92vh;
+    padding: 24px 28px;
+    border-radius: 20px;
+    background: #fff;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+}
+
+.dashboard .admin-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.dashboard .admin-title {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.dashboard .admin-sub {
+    margin: 2px 0 0;
+    color: var(--ink-soft);
+    font-size: 0.95rem;
+}
+
+.dashboard .admin-close {
+    width: 42px;
+    height: 42px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 1.6rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.dashboard .admin-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.dashboard .admin-search {
+    flex: 1 1 240px;
+    max-width: 360px;
+    min-height: 46px;
+}
+
+/* ---------- Form ---------- */
+.dashboard .admin-form {
+    padding: 18px 20px;
+    border: 1.5px solid #bfe5cc;
+    border-radius: 14px;
+    background: var(--brand-tint);
+}
+
+.dashboard .admin-form-title {
+    margin: 0 0 12px;
+    font-size: 1.1rem;
+}
+
+.dashboard .admin-form-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px 16px;
+}
+
+.dashboard .admin-form-actions {
+    justify-content: flex-end;
+    margin-top: 16px;
+}
+
+/* ---------- Table ---------- */
+.dashboard .admin-table-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+}
+
+.dashboard .admin-table {
+    width: 100%;
+    min-width: 1060px;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.98rem;
+}
+
+.dashboard .admin-table th,
+.dashboard .admin-table td {
+    padding: 12px 14px;
+    text-align: left;
+    vertical-align: middle;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+}
+
+.dashboard .admin-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--brand-tint);
+    color: var(--brand-dark);
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.dashboard .admin-table tbody tr:nth-child(even) {
+    background: #f8fcf9;
+}
+
+.dashboard .admin-table tbody tr:hover {
+    background: var(--brand-tint);
+}
+
+.dashboard .admin-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.dashboard .admin-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.dashboard .admin-table .col-name {
+    min-width: 170px;
+    font-weight: 700;
+}
+
+.dashboard .admin-table .col-actions {
+    text-align: right;
+}
+
+.dashboard .admin-table .col-actions .btn-row {
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+}
+
+.dashboard .admin-table .btn-sm {
+    min-height: 38px;
+    padding: 0 14px;
+    font-size: 0.92rem;
+}
+
+.dashboard .btn-danger {
+    color: var(--bad);
+    border-color: #f1c0c0;
+}
+
+.dashboard .btn-danger:hover:not(:disabled) {
+    background: #fdecec;
+    border-color: var(--bad);
+    color: var(--bad);
+}
+
+.dashboard .admin-empty {
+    padding: 36px 14px !important;
+    text-align: center !important;
+    color: var(--ink-soft);
+}
+
+/* BMI badge */
+.dashboard .bmi-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: var(--brand-tint);
+    color: var(--brand-dark);
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+
+.dashboard .bmi-badge strong {
+    font-size: 1rem;
+}
+
+.dashboard .bmi-b-underweight { background: #e6f0fd; color: #1d5fc4; }
+.dashboard .bmi-b-overweight  { background: #fff4e0; color: #b45309; }
+.dashboard .bmi-b-obese       { background: #fde8e8; color: #b91c1c; }
+
+@media (max-width: 760px) {
+    .dashboard .admin-form-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}

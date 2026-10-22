@@ -15,7 +15,9 @@ interface Props {
 
 export default function IdentityScreen({ state, actions }: Props) {
   const [text, setText] = useState('')
-  const { sectionTitle, promptKind, identity, connected, error } = state
+  const { connected, error } = state
+  const promptKind = (state as KioskState & { promptKind?: string }).promptKind
+  const sectionTitle = (state as KioskState & { sectionTitle?: string }).sectionTitle ?? ''
   const autoStarted = useRef(false)
 
   // If the device is already connected (e.g. starting a new check-up
@@ -43,9 +45,9 @@ export default function IdentityScreen({ state, actions }: Props) {
       <ConnectionBar connected={connected} error={error} onConnect={actions.connectDevice} />
 
       <div className="identity-progress">
-        <span className={identity.name ? 'done' : sectionTitle === 'NAME' ? 'active' : ''}>Name</span>
-        <span className={identity.age ? 'done' : sectionTitle === 'AGE' ? 'active' : ''}>Age</span>
-        <span className={identity.gender ? 'done' : sectionTitle === 'GENDER' ? 'active' : ''}>Gender</span>
+        <span className={sectionTitle === 'NAME' ? 'active' : sectionTitle === 'AGE' || sectionTitle === 'GENDER' ? 'done' : ''}>Name</span>
+        <span className={sectionTitle === 'AGE' ? 'active' : sectionTitle === 'GENDER' ? 'done' : ''}>Age</span>
+        <span className={sectionTitle === 'GENDER' ? 'active' : ''}>Gender</span>
       </div>
 
       <h2 className="screen-title">{fieldLabel}</h2>
@@ -64,7 +66,7 @@ export default function IdentityScreen({ state, actions }: Props) {
         </div>
       )}
 
-      {promptKind === 'name' && (
+      {String(promptKind) === 'name' && (
         <form
           className="prompt-card"
           onSubmit={(e) => {
@@ -88,7 +90,7 @@ export default function IdentityScreen({ state, actions }: Props) {
         </form>
       )}
 
-      {promptKind === 'age' && (
+      {String(promptKind) === 'age' && (
         <form
           className="prompt-card"
           onSubmit={(e) => {
@@ -116,7 +118,7 @@ export default function IdentityScreen({ state, actions }: Props) {
         </form>
       )}
 
-      {promptKind === 'gender' && (
+      {String(promptKind) === 'gender' && (
         <div className="prompt-card">
           <div className="btn-row">
             <button className="btn btn-primary btn-wide" onClick={() => actions.submitGender('M')}>

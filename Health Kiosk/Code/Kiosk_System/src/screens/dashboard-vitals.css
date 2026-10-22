@@ -1,0 +1,306 @@
+/* =========================================================
+   Two-column dashboard: Patient card + expanded Vital signs
+   Import AFTER dashboard-extras.css so these rules override.
+   ========================================================= */
+
+/* ---------- Allow the page to scroll (fixes cut-off bottom) ---------- */
+html,
+body,
+#root {
+    height: auto !important;
+    min-height: 100%;
+    overflow-y: auto !important;
+}
+
+.dashboard {
+    height: auto !important;
+    min-height: 100vh;
+    overflow: visible !important;
+    padding-bottom: 40px;
+}
+
+/* ---------- Layout ---------- */
+.dashboard-body {
+    display: grid !important;
+    grid-template-columns: 340px minmax(0, 1fr) !important;
+    gap: 24px;
+    align-items: start;
+    width: 100%;
+    max-width: none !important;
+    padding: 24px 24px 40px;
+    overflow: visible !important;
+}
+
+/* ---------- Patient card ---------- */
+.identity-card {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.identity-card .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+/* ---------- Vital signs card ---------- */
+.vitals-card {
+    display: block;
+    min-width: 0;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 20px 24px;
+}
+
+.vitals-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+}
+
+.vitals-count {
+    font-size: 1rem;
+    opacity: 0.7;
+}
+
+.vitals-progress {
+    height: 10px;
+    margin: 12px 0 18px;
+    border-radius: 999px;
+    background: rgba(128, 128, 128, 0.2);
+    overflow: hidden;
+}
+
+.vitals-progress > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #12997f;
+    transition: width 0.3s ease;
+}
+
+/* Rows: full width, fixed height, never overlap */
+.vitals-list {
+    flex: 0 0 auto !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    grid-auto-rows: 60px !important;
+    gap: 12px !important;
+    height: auto !important;
+    max-height: none !important;
+}
+
+/* Remove the old connector line between rows */
+.vitals-list::before,
+.vitals-row::before,
+.vitals-row::after {
+    display: none !important;
+}
+
+.vitals-row {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    width: 100% !important;
+    height: 60px !important;
+    margin: 0 !important;
+    padding: 0 24px;
+    position: relative !important;
+    transform: none !important;
+    font-size: 1.2rem;
+}
+
+.vitals-icon {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+}
+
+.vitals-icon svg {
+    width: 24px;
+    height: 24px;
+}
+
+.vitals-label {
+    flex: 1;
+    font-weight: 600;
+}
+
+.vitals-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+}
+
+.vitals-status {
+    min-width: 110px;
+    text-align: right;
+    font-size: 0.95rem;
+    opacity: 0.75;
+}
+
+/* ---------- Active step + results (sit below the list) ---------- */
+.active-step-panel,
+.results-panel {
+    clear: both;
+    margin-top: 20px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+.inline-prompt {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.btn-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.results-title {
+    margin: 0 0 12px;
+}
+
+.results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin: 14px 0;
+}
+
+.result-item,
+.bmi-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: rgba(128, 128, 128, 0.08);
+}
+
+.bmi-card {
+    margin-bottom: 16px;
+}
+
+.bmi-value {
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+/* ---------- Small screens: stack ---------- */
+@media (max-width: 900px) {
+    .dashboard-body {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* ---------- Results popup ---------- */
+.results-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(3px);
+    animation: results-fade 0.2s ease;
+}
+
+.results-modal {
+    position: relative;
+    width: min(640px, 100%);
+    max-height: 92vh;
+    overflow-y: auto;
+    padding: 28px;
+    border-radius: 20px;
+    background: #fff;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+    animation: results-pop 0.25s ease;
+}
+
+.results-close {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    width: 36px;
+    height: 36px;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(128, 128, 128, 0.15);
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.results-modal-title {
+    margin: 0 40px 16px 0;
+    font-size: 1.15rem;
+}
+
+.bmi-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 24px 16px;
+    margin-bottom: 18px;
+    border-radius: 16px;
+    background: #e8f7f1;
+    text-align: center;
+}
+
+.bmi-hero-label {
+    font-size: 1rem;
+    opacity: 0.7;
+}
+
+.bmi-hero-value {
+    font-size: 4.5rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.bmi-hero-category {
+    font-size: 1.4rem;
+    font-weight: 700;
+}
+
+.bmi-hero.bmi-underweight { background: #e6f0fd; }
+.bmi-hero.bmi-underweight .bmi-hero-category { color: #1f6feb; }
+.bmi-hero.bmi-normal,
+.bmi-hero.bmi-normal-weight { background: #e8f7f1; }
+.bmi-hero.bmi-normal .bmi-hero-category,
+.bmi-hero.bmi-normal-weight .bmi-hero-category { color: #12997f; }
+.bmi-hero.bmi-overweight { background: #fff4e0; }
+.bmi-hero.bmi-overweight .bmi-hero-category { color: #d97706; }
+.bmi-hero.bmi-obese,
+.bmi-hero.bmi-obesity { background: #fde8e8; }
+.bmi-hero.bmi-obese .bmi-hero-category,
+.bmi-hero.bmi-obesity .bmi-hero-category { color: #dc2626; }
+
+.results-modal-actions {
+    justify-content: flex-end;
+    margin-top: 8px;
+}
+
+@keyframes results-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes results-pop {
+    from { opacity: 0; transform: scale(0.94) translateY(8px); }
+    to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .results-overlay,
+    .results-modal { animation: none; }
+}

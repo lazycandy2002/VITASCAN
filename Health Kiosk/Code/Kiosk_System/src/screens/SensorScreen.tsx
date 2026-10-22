@@ -15,7 +15,9 @@ const STEP_LABEL: Record<string, string> = {
 }
 
 export default function SensorScreen({ state, actions }: Props) {
-  const { sectionTitle, promptKind, statusLine, stepIndex } = state
+  const { statusLine, stepIndex } = state
+  const promptKind = (state as KioskState & { promptKind?: 'ready' | 'retry' | 'redo' }).promptKind
+  const sectionTitle = STEP_ORDER[stepIndex - 1] ?? 'Measurement'
   const timeMatch = statusLine.match(/Time: (\d+) sec/)
 
   return (

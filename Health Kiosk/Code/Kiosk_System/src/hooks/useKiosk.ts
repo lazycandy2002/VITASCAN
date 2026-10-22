@@ -1,51 +1,89 @@
-
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { kioskSerial } from '../lib/serial'
 
 export type KioskScreen = 'splash' | 'identity' | 'sensor' | 'results'
 
-export type PromptKind = 'ready' | 'retry' | 'redo' | 'finish' | null
+/**
+ * booting   - Arduino just connected / reset, scale is zeroing
+ * idle      - waiting for the user to press Start
+ * running   - Arduino is measuring (or processing a command)
+ * waitDone  - Arduino waits for "done" (height / weight)
+ * confirm   - result ready, waiting for Retake (y) or Accept (n)
+ * complete  - all five measurements accepted
+ */
+export type Phase =
+    | 'booting'
+    | 'idle'
+    | 'running'
+    | 'waitDone'
+    | 'confirm'
+    | 'complete'
 
-export interface KioskResults {
-    TEMPERATURE?: string
-    RAW_BPM?: string
-    CORRECTED_BPM?: string
-    SPO2?: string
-    HEIGHT?: string
-    WEIGHT?: string
-    BMI?: string
-    BMI_CATEGORY?: string
+export const STEPS = [
+    'TEMPERATURE',
+    'PULSE',
+    'OXYGEN',
+    'HEIGHT',
+    'WEIGHT',
+] as const
+
+export type StepKey = (typeof STEPS)[number]
+
+/** undefined = not measured yet, null = measurement failed */
+export type KioskResults = Partial<Record<StepKey, number | null>>
+
+/** rx = from Arduino, tx = sent to Arduino, sys = connection events */
+export interface SerialLogEntry {
+    id: number
+    dir: 'rx' | 'tx' | 'sys'
+    text: string
+    time: number
 }
+
+const MAX_LOG = 300
 
 export interface KioskState {
     screen: KioskScreen
-    sectionTitle: string
-    promptKind: PromptKind
-    results: KioskResults
+    phase: Phase
+    /** 0-based index into STEPS, -1 when no step is active */
     stepIndex: number
+    results: KioskResults
+    accepted: boolean[]
     connected: boolean
     error: string
     statusLine: string
+    warnings: string[]
+    log: SerialLogEntry[]
 }
+
+const noneAccepted = () => STEPS.map(() => false)
 
 const initialState: KioskState = {
     screen: 'splash',
-    sectionTitle: '',
-    promptKind: null,
+    phase: 'booting',
+    stepIndex: -1,
     results: {},
-    stepIndex: 0,
+    accepted: noneAccepted(),
     connected: false,
     error: '',
     statusLine: 'Welcome to VitaScan.',
+    warnings: [],
+    log: [],
 }
 
 export interface KioskActions {
     connectDevice: () => void
     enterIdentity: () => void
     start: () => void
-    calibrateWeight: () => void
-    answerConfirm: (yes: boolean) => void
-    finish: () => void
+    retake: () => void
+    accept: () => void
+    next: () => void
+    measure: () => void
+    tare: () => void
+    newSession: () => void
+    clearLog: () => void
+    /** Send a raw sketch command: start, y, n, next, done, tare */
+    sendCommand: (command: string) => void
 }
 
 export interface KioskController {
@@ -53,10 +91,81 @@ export interface KioskController {
     actions: KioskActions
 }
 
+export function computeBmi(
+    heightCm?: number | null,
+    weightKg?: number | null,
+) {
+    if (!heightCm || !weightKg || heightCm <= 0 || weightKg <= 0) {
+        return null
+    }
+    const m = heightCm / 100
+    const bmi = weightKg / (m * m)
+    const category =
+        bmi < 18.5
+            ? 'Underweight'
+            : bmi < 25
+              ? 'Normal weight'
+              : bmi < 30
+                ? 'Overweight'
+                : 'Obese'
+    return { bmi, category }
+}
+
+// Names printed after "STEP: " by the Arduino sketch
+const STEP_BY_NAME: Record<string, number> = {
+    TEMPERATURE: 0,
+    'PULSE RATE': 1,
+    'OXYGEN SATURATION': 2,
+    HEIGHT: 3,
+    WEIGHT: 4,
+}
+
+const VALUE_LINES: Array<[RegExp, StepKey]> = [
+    [/^TEMP_C:\s*(-?\d+(?:\.\d+)?)/, 'TEMPERATURE'],
+    [/^PULSE_BPM:\s*(-?\d+(?:\.\d+)?)/, 'PULSE'],
+    [/^SPO2_PERCENT:\s*(-?\d+(?:\.\d+)?)/, 'OXYGEN'],
+    [/^HEIGHT_CM:\s*(-?\d+(?:\.\d+)?)/, 'HEIGHT'],
+    [/^WEIGHT_KG:\s*(-?\d+(?:\.\d+)?)/, 'WEIGHT'],
+]
+
+const ERROR_PREFIX: Record<string, number> = {
+    TEMP: 0,
+    PULSE: 1,
+    SPO2: 2,
+    HEIGHT: 3,
+    WEIGHT: 4,
+}
+
+const ACCEPTED_INDEX: Record<string, number> = {
+    TEMPERATURE: 0,
+    PULSE: 1,
+    SPO2: 2,
+    HEIGHT: 3,
+    WEIGHT: 4,
+}
+
+const INSTRUCTION_PREFIXES = [
+    'Aim the',
+    'Averaging',
+    'Place your finger',
+    'Keep your finger',
+    'Collecting',
+    'Measuring height',
+    'Reading HX711',
+    'Keep the platform',
+]
+
+const WAIT_DONE_LINES = new Set([
+    'Type done to measure height.',
+    'Type done when you are standing still.',
+    'Type done to measure again.',
+])
+
 export function useKiosk(): KioskController {
     const [state, setState] = useState<KioskState>(initialState)
     const stateRef = useRef(state)
-    const confirmModeRef = useRef<PromptKind>(null)
+    const bootTimer = useRef<number | undefined>(undefined)
+    const logId = useRef(0)
 
     useEffect(() => {
         stateRef.current = state
@@ -66,285 +175,373 @@ export function useKiosk(): KioskController {
         setState(previous => ({ ...previous, ...patch }))
     }, [])
 
-    const send = useCallback(async (command: string) => {
-        try {
-            await kioskSerial.sendLine(command)
-            update({ error: '' })
-        } catch (error) {
-            update({
-                error: error instanceof Error
-                    ? error.message
-                    : String(error),
-            })
-        }
-    }, [update])
+    const pushLog = useCallback(
+        (dir: SerialLogEntry['dir'], text: string) => {
+            const entry: SerialLogEntry = {
+                id: ++logId.current,
+                dir,
+                text,
+                time: Date.now(),
+            }
+            setState(s => ({
+                ...s,
+                log: [...s.log, entry].slice(-MAX_LOG),
+            }))
+        },
+        [],
+    )
 
-    // Get Started opens the dashboard only.
-    // It does not connect to Arduino or send START.
+    const clearLog = useCallback(() => {
+        setState(s => ({ ...s, log: [] }))
+    }, [])
+
+    const send = useCallback(
+        async (command: string) => {
+            try {
+                pushLog('tx', command)
+                await kioskSerial.sendLine(command)
+                update({ error: '' })
+            } catch (error) {
+                update({
+                    error:
+                        error instanceof Error
+                            ? error.message
+                            : String(error),
+                })
+            }
+        },
+        [update, pushLog],
+    )
+
+    // ---------------------------------------------------------------
+    // Actions
+    // ---------------------------------------------------------------
     const enterIdentity = useCallback(() => {
         update({
             screen: 'identity',
-            sectionTitle: 'VITAL SIGNS',
-            promptKind: null,
+            stepIndex: -1,
             results: {},
-            stepIndex: 0,
+            accepted: noneAccepted(),
             error: '',
-            statusLine: 'Connect the Arduino, then start measurement.',
+            statusLine: 'Connect the device, then enter patient details.',
         })
     }, [update])
 
     const connectDevice = useCallback(async () => {
         try {
             await kioskSerial.connect()
+
             update({
                 connected: true,
+                phase: 'booting',
+                warnings: [],
                 error: '',
-                statusLine: 'Arduino connected and ready.',
+                statusLine:
+                    'Device starting. Keep the weighing platform empty…',
             })
+
+            // Opening the port resets most Arduino boards. If the banner is
+            // missed, fall back to idle after a while.
+            window.clearTimeout(bootTimer.current)
+            bootTimer.current = window.setTimeout(() => {
+                setState(s =>
+                    s.phase === 'booting'
+                        ? { ...s, phase: 'idle', statusLine: '' }
+                        : s,
+                )
+            }, 12000)
         } catch (error) {
             update({
                 connected: false,
-                error: error instanceof Error
-                    ? error.message
-                    : String(error),
+                error:
+                    error instanceof Error ? error.message : String(error),
             })
         }
     }, [update])
 
-    // Start the sensor-only Arduino workflow.
     const start = useCallback(() => {
         if (!stateRef.current.connected) {
-            update({
-                error: 'Connect the Arduino before starting measurement.',
-            })
+            update({ error: 'Connect the device before starting.' })
             return
         }
-
-        confirmModeRef.current = null
 
         update({
             screen: 'sensor',
-            sectionTitle: 'Starting measurement',
-            promptKind: null,
-            results: {},
+            phase: 'running',
             stepIndex: 0,
+            results: {},
+            accepted: noneAccepted(),
             error: '',
-            statusLine: 'Sending START to Arduino...',
+            statusLine: 'Starting…',
         })
 
-        void send('START')
+        void send('start')
     }, [send, update])
 
-    const calibrateWeight = useCallback(() => {
+    const retake = useCallback(async () => {
+        const i = stateRef.current.stepIndex
+        if (i < 0) return
+
+        setState(s => ({
+            ...s,
+            phase: 'running',
+            statusLine: '',
+            results: { ...s.results, [STEPS[i]]: undefined },
+        }))
+
+        // Y only. Weight returns to "type done", which shows Measure.
+        await send('y')
+    }, [send])
+
+    const accept = useCallback(async () => {
+        const i = stateRef.current.stepIndex
+        if (i < 0) return
+
+        setState(s => ({
+            ...s,
+            accepted: s.accepted.map((v, k) => (k === i ? true : v)),
+            statusLine: '',
+        }))
+
+        // N only. "Next" is its own button, like typing it.
+        await send('n')
+    }, [send])
+
+    const next = useCallback(() => {
+        update({ phase: 'running', statusLine: '', error: '' })
+        void send('next')
+    }, [send, update])
+
+    const measure = useCallback(() => {
+        update({ phase: 'running', statusLine: '' })
+        void send('done')
+    }, [send, update])
+
+    const tare = useCallback(() => {
         if (!stateRef.current.connected) {
-            update({ error: 'Connect the Arduino before calibration.' })
+            update({ error: 'Connect the device first.' })
             return
         }
-
-        update({
-            error: '',
-            statusLine: 'Starting weight calibration...',
-        })
-
-        void send('CALIBRATE')
+        update({ error: '', statusLine: 'Zeroing scale…' })
+        void send('tare')
     }, [send, update])
 
-    const answerConfirm = useCallback((yes: boolean) => {
-        if (!stateRef.current.connected) {
-            update({ error: 'Arduino is not connected.' })
-            return
-        }
-
-        const mode = confirmModeRef.current
-
-        if (!mode) {
-            update({
-                error: 'No active confirmation prompt from Arduino.',
-            })
-            return
-        }
-
-        if (mode === 'finish') {
-            if (yes) {
-                void send('END')
+    // Manual override: send a raw command. The screen then follows whatever
+    // the Arduino prints back.
+    const sendCommand = useCallback(
+        (command: string) => {
+            if (!stateRef.current.connected) {
+                update({ error: 'Connect the device first.' })
+                return
             }
-            return
-        }
 
-        confirmModeRef.current = null
+            const c = command.trim().toLowerCase()
+            if (!c) return
 
-        update({
-            promptKind: null,
-            error: '',
-            statusLine: yes ? 'Confirmation sent.' : 'Response sent.',
-        })
-
-        void send(yes ? 'Y' : 'N')
-    }, [send, update])
-
-    const finish = useCallback(() => {
-        if (!stateRef.current.connected) {
-            update({ error: 'Arduino is not connected.' })
-            return
-        }
-
-        if (confirmModeRef.current !== 'finish') {
-            update({
-                error: 'The Arduino has not reached the end-of-session prompt.',
-            })
-            return
-        }
-
-        void send('END')
-    }, [send, update])
-
-    useEffect(() => {
-        const removeLine = kioskSerial.onLine(line => {
-            const upper = line.trim().toUpperCase()
-
-            // Arduino step notifications, e.g. STEP 1: TEMPERATURE
-            const stepMatch = upper.match(/STEP\s+(\d+):\s*(.+)/)
-
-            if (stepMatch) {
-                const stepNumber = Number(stepMatch[1])
-                const title = stepMatch[2].trim()
-
+            if (c === 'start') {
                 update({
                     screen: 'sensor',
-                    sectionTitle: title,
-                    stepIndex: stepNumber,
-                    promptKind: null,
-                    error: '',
-                    statusLine: `Measuring ${title.toLowerCase()}...`,
-                })
-                return
-            }
-
-            // Support optional prompts from Arduino firmware.
-            if (upper.includes('TRY AGAIN?')) {
-                confirmModeRef.current = 'retry'
-                update({
-                    screen: 'sensor',
-                    promptKind: 'retry',
-                    statusLine: 'No valid reading. Try again or skip.',
-                })
-                return
-            }
-
-            if (upper.includes('REDO THIS STEP?')) {
-                confirmModeRef.current = 'redo'
-                update({
-                    screen: 'sensor',
-                    promptKind: 'redo',
-                    statusLine: 'Accept the reading or redo it.',
-                })
-                return
-            }
-
-            if (upper.includes('READY TO START?')) {
-                confirmModeRef.current = 'ready'
-                update({
-                    screen: 'sensor',
-                    promptKind: 'ready',
-                    statusLine: 'Confirm when ready.',
-                })
-                return
-            }
-
-            // Parse final sensor values.
-            const resultMatch = upper.match(
-                /^(TEMPERATURE|RAW_BPM|CORRECTED_BPM|SPO2|HEIGHT|WEIGHT|BMI|BMI_CATEGORY):\s*(.*)$/,
-            )
-
-            if (resultMatch) {
-                update({
-                    results: {
-                        ...stateRef.current.results,
-                        [resultMatch[1]]: resultMatch[2].trim(),
-                    },
-                    screen: 'results',
-                    statusLine: 'Receiving measurement results...',
-                })
-                return
-            }
-
-            if (upper.includes('MEASUREMENT STARTED')) {
-                update({
-                    screen: 'sensor',
-                    statusLine: 'Arduino measurement started.',
-                })
-                return
-            }
-
-            if (upper.includes('MEASUREMENT COMPLETE')) {
-                update({
-                    screen: 'results',
-                    promptKind: null,
-                    statusLine: 'Measurement complete.',
-                })
-                return
-            }
-
-            if (upper.includes('RESULTS WILL REMAIN DISPLAYED')) {
-                confirmModeRef.current = 'finish'
-                update({
-                    screen: 'results',
-                    promptKind: 'finish',
-                    statusLine: 'Measurement complete. End the session when ready.',
-                })
-                return
-            }
-
-            if (upper.includes('END COMMAND RECEIVED')) {
-                confirmModeRef.current = null
-
-                update({
-                    screen: 'splash',
-                    sectionTitle: '',
-                    promptKind: null,
-                    results: {},
+                    phase: 'running',
                     stepIndex: 0,
+                    results: {},
+                    accepted: noneAccepted(),
                     error: '',
-                    statusLine: 'Session ended. Ready for the next measurement.',
+                    statusLine: 'Starting…',
+                })
+            } else {
+                update({ error: '' })
+            }
+
+            void send(c)
+        },
+        [send, update],
+    )
+
+    // UI reset only; the Arduino stays in ALL_DONE, which accepts "start".
+    const newSession = useCallback(() => {
+        update({
+            screen: 'identity',
+            phase: 'idle',
+            stepIndex: -1,
+            results: {},
+            accepted: noneAccepted(),
+            error: '',
+            statusLine: '',
+        })
+    }, [update])
+
+    // ---------------------------------------------------------------
+    // Serial line parser
+    // ---------------------------------------------------------------
+    useEffect(() => {
+        const removeLine = kioskSerial.onLine(raw => {
+            const line = raw.trim()
+
+            // Everything the Arduino prints goes to the serial monitor
+            if (line) pushLog('rx', line)
+
+            if (!line || /^[-=]+$/.test(line)) return
+
+            // Boot finished
+            if (
+                line.startsWith('Type start to begin') ||
+                line === 'SCALE CALIBRATED AND ZEROED' ||
+                line.startsWith('Calibration factor')
+            ) {
+                window.clearTimeout(bootTimer.current)
+                setState(s => ({
+                    ...s,
+                    phase: s.phase === 'booting' ? 'idle' : s.phase,
+                    statusLine: '',
+                }))
+                return
+            }
+
+            // Sensor missing at boot
+            if (
+                line.endsWith('NOT DETECTED') ||
+                line.includes('NOT READY DURING TARE')
+            ) {
+                setState(s => ({ ...s, warnings: [...s.warnings, line] }))
+                return
+            }
+
+            if (line === 'NEW MEASUREMENT SESSION') {
+                setState(s => ({
+                    ...s,
+                    results: {},
+                    accepted: noneAccepted(),
+                }))
+                return
+            }
+
+            // STEP: TEMPERATURE | PULSE RATE | OXYGEN SATURATION | HEIGHT | WEIGHT
+            if (line.startsWith('STEP: ')) {
+                const idx = STEP_BY_NAME[line.slice(6).trim()]
+                if (idx !== undefined) {
+                    setState(s => ({
+                        ...s,
+                        screen: 'sensor',
+                        phase: 'running',
+                        stepIndex: idx,
+                        results: { ...s.results, [STEPS[idx]]: undefined },
+                        accepted: s.accepted.map((v, k) =>
+                            k === idx ? false : v,
+                        ),
+                        statusLine: '',
+                        error: '',
+                    }))
+                }
+                return
+            }
+
+            // TEMPERATURE_ACCEPTED, PULSE_ACCEPTED, SPO2_ACCEPTED, ...
+            const acc = line.match(
+                /^(TEMPERATURE|PULSE|SPO2|HEIGHT|WEIGHT)_ACCEPTED$/,
+            )
+            if (acc) {
+                const idx = ACCEPTED_INDEX[acc[1]]
+                setState(s => ({
+                    ...s,
+                    accepted: s.accepted.map((v, k) =>
+                        k === idx ? true : v,
+                    ),
+                }))
+                return
+            }
+
+            // Numeric results
+            for (const [re, key] of VALUE_LINES) {
+                const m = line.match(re)
+                if (m) {
+                    setState(s => ({
+                        ...s,
+                        results: { ...s.results, [key]: Number(m[1]) },
+                    }))
+                    return
+                }
+            }
+
+            // TEMP_ERROR / PULSE_ERROR / SPO2_ERROR / HEIGHT_ERROR /
+            // WEIGHT_ERROR / MAX30102_ERROR
+            const err = line.match(/^([A-Z0-9]+)_ERROR:\s*(.*)$/)
+            if (err) {
+                setState(s => {
+                    const idx = ERROR_PREFIX[err[1]] ?? s.stepIndex
+                    return {
+                        ...s,
+                        results:
+                            idx >= 0
+                                ? { ...s.results, [STEPS[idx]]: null }
+                                : s.results,
+                        statusLine: err[2] || 'Measurement failed.',
+                    }
                 })
                 return
             }
 
-            if (upper === 'SYSTEM READY') {
+            // "<SENSOR> RESULT READY" -> Retake / Accept
+            if (line.endsWith('RESULT READY')) {
+                update({ phase: 'confirm' })
+                return
+            }
+
+            // Height / weight wait for "done"
+            if (WAIT_DONE_LINES.has(line)) {
+                update({ phase: 'waitDone', statusLine: '' })
+                return
+            }
+
+            if (line === 'ALL MEASUREMENTS COMPLETED') {
                 update({
-                    statusLine: 'Arduino system ready.',
+                    screen: 'results',
+                    phase: 'complete',
+                    statusLine: 'All measurements complete.',
                 })
                 return
             }
 
-            if (upper.startsWith('ERROR:')) {
-                update({
-                    error: line,
-                    statusLine: line,
-                })
+            if (line === 'TARING_SCALE') {
+                update({ statusLine: 'Zeroing scale…' })
                 return
             }
 
-            if (upper.startsWith('WARNING:')) {
+            if (line === 'SCALE_TARED') {
+                update({ statusLine: 'Scale zeroed.' })
+                return
+            }
+
+            if (line === 'FINGER_DETECTED') {
+                update({ statusLine: 'Finger detected. Hold still…' })
+                return
+            }
+
+            if (INSTRUCTION_PREFIXES.some(p => line.startsWith(p))) {
                 update({ statusLine: line })
             }
         })
 
         const removeStatus = kioskSerial.onStatus(connected => {
-            update({
-                connected,
-                error: connected ? '' : 'Arduino disconnected.',
-                statusLine: connected
-                    ? 'Arduino connected.'
-                    : 'Connect the Arduino to continue.',
-            })
+            if (connected) {
+                pushLog('sys', 'Device connected')
+                update({ connected: true, error: '' })
+            } else {
+                pushLog('sys', 'Device disconnected')
+                update({
+                    connected: false,
+                    phase: 'booting',
+                    error: 'Device disconnected.',
+                    statusLine: 'Connect the device to continue.',
+                })
+            }
         })
 
         return () => {
             removeLine()
             removeStatus()
+            window.clearTimeout(bootTimer.current)
         }
-    }, [update])
+    }, [update, pushLog])
 
     return {
         state,
@@ -352,9 +549,14 @@ export function useKiosk(): KioskController {
             connectDevice,
             enterIdentity,
             start,
-            calibrateWeight,
-            answerConfirm,
-            finish,
+            retake,
+            accept,
+            next,
+            measure,
+            tare,
+            newSession,
+            clearLog,
+            sendCommand,
         },
     }
 }
